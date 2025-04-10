@@ -1,0 +1,9 @@
+env.xml
+MUJOCO_LOG.txt
+
+__pycache__/
+.DS_Store
+
+.vscode/
+
+build/
