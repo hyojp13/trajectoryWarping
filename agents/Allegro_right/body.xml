@@ -1,0 +1,121 @@
+<mujoco model="Allegro_right">
+
+    <body name="allegro_wrist" gravcomp="1">
+      <joint name="RootTx" axis="1 0 0" type="slide" damping="1"/>
+      <joint name="RootTy" axis="0 1 0" type="slide" damping="1"/>
+      <joint name="RootTz" axis="0 0 1" type="slide" damping="1"/>
+      <joint name="RootR" type="ball"/>
+
+      <body name="allegro_palm" gravcomp="1" childclass="Allegro_right" pos="0 0 0.09420">
+        <inertial mass="0.4154" pos="0 0 0.0475" diaginertia="1e-4 1e-4 1e-4"/>
+        <geom class="palm_visual" mesh="base_link"/>
+        <geom class="palm_collision" name="agent_collider_palm_collision"/>
+
+            <!-- Thumb -->
+            <body name="allegro_th_base" gravcomp="1" pos="-0.0182 0.019333 -0.045987" quat="-0.396524 0.599668 0.445978 0.533171">
+                <joint name="thj0" class="thumb_base"/>
+                <geom class="visual" mesh="link_12.0_right"/>
+                <geom class="thumb_base_collision" name="agent_collider_thumb_base_collision"/>
+                <body name="allegro_th_proximal" gravcomp="1" pos="-0.027 0.005 0.0399">
+                    <joint name="thj1" class="thumb_proximal"/>
+                    <geom class="visual" mesh="link_13.0"/>
+                    <geom class="thumb_proximal_collision" name="agent_collider_thumb_proximal_collision"/>
+                    <body name="allegro_th_medial" gravcomp="1" pos="0 0 0.0177">
+                        <joint name="thj2" class="thumb_medial"/>
+                        <geom class="visual" mesh="link_14.0"/>
+                        <geom class="thumb_medial_collision" name="agent_collider_thumb_medial_collision"/>
+                        <body name="allegro_th_distal" gravcomp="1" pos="0 0 0.0514">
+                            <joint name="thj3" class="thumb_distal"/>
+                            <geom class="visual" mesh="link_15.0"/>
+                            <geom class="thumb_distal_collision" name="agent_collider_thumb_distal_collision"/>
+                            <body name="allegro_th_tip" gravcomp="1" pos="0 0 0.0423">
+                                <geom class="thumbtip_visual"/>
+                                <geom class="thumbtip_collision" name="agent_collider_thumbtip_collision"/>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+
+            <!-- First finger -->
+            <body name="allegro_ff_base" gravcomp="1" pos="0 0.0435 -0.001542" quat="0.999048 -0.0436212 0 0">
+                <joint name="ffj0" class="base"/>
+                <geom class="base_visual"/>
+                <geom class="base_collision" name="agent_collider_ff_base_collision"/>
+                <body name="allegro_ff_proximal" gravcomp="1" pos="0 0 0.0164">
+                    <joint name="ffj1" class="proximal"/>
+                    <geom class="proximal_visual"/>
+                    <geom class="proximal_collision" name="agent_collider_ff_proximal_collision"/>
+                    <body name="allegro_ff_medial" gravcomp="1" pos="0 0 0.054">
+                        <joint name="ffj2" class="medial"/>
+                        <geom class="medial_visual"/>
+                        <geom class="medial_collision" name="agent_collider_ff_medial_collision"/>
+                        <body name="allegro_ff_distal" gravcomp="1" pos="0 0 0.0384">
+                            <joint name="ffj3" class="distal"/>
+                            <geom class="distal_visual"/>
+                            <geom class="distal_collision" name="agent_collider_ff_distal_collision"/>
+                            <body name="allegro_ff_tip" gravcomp="1" pos="0 0 0.0267">
+                                <geom class="fingertip_visual"/>
+                                <geom class="fingertip_collision" name="agent_collider_ff_fingertip_collision"/>
+                            </body>
+                        </body>
+                        </body>
+                </body>
+            </body>
+
+            <!-- Middle finger -->
+            <body name="allegro_mf_base" gravcomp="1" pos="0 0 0.0007">
+                <joint name="mfj0" class="base"/>
+                <geom class="base_visual"/>
+                <geom class="base_collision" name="agent_collider_mf_base_collision"/>
+                <body name="allegro_mf_proximal" gravcomp="1" pos="0 0 0.0164">
+                    <joint name="mfj1" class="proximal"/>
+                    <geom class="proximal_visual"/>
+                    <geom class="proximal_collision" name="agent_collider_mf_proximal_collision"/>
+                    <body name="allegro_mf_medial" gravcomp="1" pos="0 0 0.054">
+                        <joint name="mfj2" class="medial"/>
+                        <geom class="medial_visual"/>
+                        <geom class="medial_collision" name="agent_collider_mf_medial_collision"/>
+                        <body name="allegro_mf_distal" gravcomp="1" pos="0 0 0.0384" quat="0.999095 0 -0.0425433 0">
+                            <joint name="mfj3" class="distal"/>
+                            <geom class="distal_visual"/>
+                            <geom class="distal_collision" name="agent_collider_mf_distal_collision"/>
+                            <body name="allegro_mf_tip" gravcomp="1" pos="0 0 0.0267">
+                                <geom class="fingertip_visual"/>
+                                <geom class="fingertip_collision" name="agent_collider_mf_fingertip_collision"/>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+
+            <!-- Ring finger -->
+            <body name="allegro_rf_base" gravcomp="1" pos="0 -0.0435 -0.001542" quat="0.999048 0.0436212 0 0">
+                <joint name="rfj0" class="base"/>
+                <geom class="base_visual"/>
+                <geom class="base_collision" name="agent_collider_rf_base_collision"/>
+                <body name="allegro_rf_proximal" gravcomp="1" pos="0 0 0.0164">
+                    <joint name="rfj1" class="proximal"/>
+                    <geom class="proximal_visual"/>
+                    <geom class="proximal_collision" name="agent_collider_rf_proximal_collision"/>
+                    <body name="allegro_rf_medial" gravcomp="1" pos="0 0 0.054">
+                        <joint name="rfj2" class="medial"/>
+                        <geom class="medial_visual"/>
+                        <geom class="medial_collision" name="agent_collider_rf_medial_collision"/>
+                        <body name="allegro_rf_distal" gravcomp="1" pos="0 0 0.0384">
+                            <joint name="rfj3" class="distal"/>
+                            <geom class="distal_visual"/>
+                            <geom class="distal_collision" name="agent_collider_rf_distal_collision"/>
+                            <body name="allegro_rf_tip" gravcomp="1" pos="0 0 0.0267">
+                                <geom class="fingertip_visual"/>
+                                <geom class="fingertip_collision" name="agent_collider_rf_fingertip_collision"/>
+                            </body>
+                        </body>
+                    </body>
+                </body>
+            </body>
+
+        </body>
+    </body>
+
+</mujoco>

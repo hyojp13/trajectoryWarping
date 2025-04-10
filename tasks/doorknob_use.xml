@@ -1,0 +1,21 @@
+<mujoco model="doorknob_use">
+
+    <include file="common.xml" />
+
+    <asset>
+        <mesh name="doorknob" file="geom_assets/doorknob.obj" />
+    </asset>
+
+    <worldbody>
+        <light pos="0 -0.1 0.5" dir="0 0.2 -1" diffuse="0.7 0.7 0.7" specular="0.3 0.3 0.3"
+            directional="true" castshadow="true" />
+        <camera name="Recording" mode="fixed" pos="-0.527 -1.338 1.246"
+            xyaxes="0.898 -0.440 -0.000 0.229 0.468 0.854" />
+        <body name="doorknob_mocap" mocap="true">
+            <geom type="mesh" mesh="doorknob" size="1 1 1" contype="0" conaffinity="0"
+                rgba="0 1 0 1.0" />
+        </body>
+        <geom name="floor" pos="0 0 -0.2" size="0 0 0.05" type="plane" material="blue_grid" />
+    </worldbody>
+
+</mujoco>

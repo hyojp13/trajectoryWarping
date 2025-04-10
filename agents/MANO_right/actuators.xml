@@ -1,0 +1,57 @@
+<mujoco model="MANO_right">
+
+    <actuator>
+        <position name="ratx" joint="RootTx" class="trans" kp="20"/>
+        <position name="raty" joint="RootTy" class="trans" kp="20"/>
+        <position name="ratz" joint="RootTz" class="trans" kp="20"/>
+        <motor name="rarx" joint="RootR" gear="1 0 0"/>
+        <motor name="rary" joint="RootR" gear="0 1 0"/>
+        <motor name="rarz" joint="RootR" gear="0 0 1"/>
+        <motor name="t1arx" joint="Thumb1R" gear="1 0 0"/>
+        <motor name="t1ary" joint="Thumb1R" gear="0 1 0"/>
+        <motor name="t1arz" joint="Thumb1R" gear="0 0 1"/>
+        <motor name="t2arx" joint="Thumb2R" gear="1 0 0"/>
+        <motor name="t2ary" joint="Thumb2R" gear="0 1 0"/>
+        <motor name="t2arz" joint="Thumb2R" gear="0 0 1"/>
+        <motor name="t3arx" joint="Thumb3R" gear="1 0 0"/>
+        <motor name="t3ary" joint="Thumb3R" gear="0 1 0"/>
+        <motor name="t3arz" joint="Thumb3R" gear="0 0 1"/>
+        <motor name="rf1arx" joint="Ring1R" gear="1 0 0"/>
+        <motor name="rf1ary" joint="Ring1R" gear="0 1 0"/>
+        <motor name="rf1arz" joint="Ring1R" gear="0 0 1"/>
+        <motor name="rf2arx" joint="Ring2R" gear="1 0 0"/>
+        <motor name="rf2ary" joint="Ring2R" gear="0 1 0"/>
+        <motor name="rf2arz" joint="Ring2R" gear="0 0 1"/>
+        <motor name="rf3arx" joint="Ring3R" gear="1 0 0"/>
+        <motor name="rf3ary" joint="Ring3R" gear="0 1 0"/>
+        <motor name="rf3arz" joint="Ring3R" gear="0 0 1"/>
+        <motor name="p1arx" joint="Pinky1R" gear="1 0 0"/>
+        <motor name="p1ary" joint="Pinky1R" gear="0 1 0"/>
+        <motor name="p1arz" joint="Pinky1R" gear="0 0 1"/>
+        <motor name="p2arx" joint="Pinky2R" gear="1 0 0"/>
+        <motor name="p2ary" joint="Pinky2R" gear="0 1 0"/>
+        <motor name="p2arz" joint="Pinky2R" gear="0 0 1"/>
+        <motor name="p3arx" joint="Pinky3R" gear="1 0 0"/>
+        <motor name="p3ary" joint="Pinky3R" gear="0 1 0"/>
+        <motor name="p3arz" joint="Pinky3R" gear="0 0 1"/>
+        <motor name="m1arx" joint="Middle1R" gear="1 0 0"/>
+        <motor name="m1ary" joint="Middle1R" gear="0 1 0"/>
+        <motor name="m1arz" joint="Middle1R" gear="0 0 1"/>
+        <motor name="m2arx" joint="Middle2R" gear="1 0 0"/>
+        <motor name="m2ary" joint="Middle2R" gear="0 1 0"/>
+        <motor name="m2arz" joint="Middle2R" gear="0 0 1"/>
+        <motor name="m3arx" joint="Middle3R" gear="1 0 0"/>
+        <motor name="m3ary" joint="Middle3R" gear="0 1 0"/>
+        <motor name="m3arz" joint="Middle3R" gear="0 0 1"/>
+        <motor name="i1arx" joint="Index1R" gear="1 0 0"/>
+        <motor name="i1ary" joint="Index1R" gear="0 1 0"/>
+        <motor name="i1arz" joint="Index1R" gear="0 0 1"/>
+        <motor name="i2arx" joint="Index2R" gear="1 0 0"/>
+        <motor name="i2ary" joint="Index2R" gear="0 1 0"/>
+        <motor name="i2arz" joint="Index2R" gear="0 0 1"/>
+        <motor name="i3arx" joint="Index3R" gear="1 0 0"/>
+        <motor name="i3ary" joint="Index3R" gear="0 1 0"/>
+        <motor name="i3arz" joint="Index3R" gear="0 0 1"/>
+    </actuator>
+
+</mujoco>

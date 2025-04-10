@@ -1,0 +1,20 @@
+<mujoco model="hammer_use">
+
+    <include file="common.xml" />
+
+    <asset>
+        <mesh name="hammer" file="geom_assets/hammer.obj" />
+    </asset>
+
+    <worldbody>
+        <light pos="0 -0.1 0.5" dir="0 0.2 -1" diffuse="0.7 0.7 0.7" specular="0.3 0.3 0.3"
+            directional="true" castshadow="true" />
+        <body name="hammer_mocap" mocap="true">
+            <geom type="mesh" mesh="hammer" contype="0" conaffinity="0" rgba="0 1 0 1.0" />
+        </body>
+        <geom name="table" pos="0.22647 -0.55528 0.35580" size="0.5 0.5 0.5" type="box" group="2"
+            material="grey_grid" />
+        <geom name="floor" pos="0 0 -0.2" size="0 0 0.05" type="plane" material="blue_grid" />
+    </worldbody>
+
+</mujoco>

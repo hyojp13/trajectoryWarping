@@ -1,0 +1,24 @@
+<mujoco model="stapler_staple">
+
+    <include file="common.xml" />
+
+    <asset>
+        <mesh name="stapler" file="geom_assets/stapler.obj" />
+    </asset>
+
+    <worldbody>
+        <light pos="0 -0.1 0.5" dir="0 0.2 -1" diffuse="0.7 0.7 0.7" specular="0.3 0.3 0.3"
+            directional="true" castshadow="true" />
+        <camera name="Recording" mode="fixed" pos="-0.108 -1.802 1.575"
+            xyaxes="0.972 -0.236 0.000 0.112 0.462 0.880" />
+        <body name="stapler_mocap" mocap="true">
+            <geom type="mesh" mesh="stapler" contype="0" conaffinity="0" rgba="0 1 0 1.0" />
+        </body>
+        <body name="tablebody">
+            <geom name="table" pos="0.13301 -0.96019 0.84498" size="0.5 0.5 0.5" type="plane"
+                group="2" material="grey_grid" />
+        </body>
+        <geom name="floor" pos="0 0 -0.2" size="0 0 0.05" type="plane" material="blue_grid" />
+    </worldbody>
+
+</mujoco>

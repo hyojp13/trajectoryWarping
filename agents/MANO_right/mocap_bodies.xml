@@ -1,0 +1,52 @@
+<mujoco model="MANO_right">
+
+    <body name="wrist_mocap" mocap="true">
+        <geom type="mesh" mesh="right_wrist" size="1 1 1" pos="-0.0956699401140213 -0.006383428350090981 -0.006186304613947868" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="thumb1_mocap" mocap="true">
+        <geom type="mesh" mesh="right_thumb1" size="1 1 1" pos="-0.07158022373914719 0.009138905443251133 -0.03199914842844009" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="thumb2_mocap" mocap="true">
+        <geom type="mesh" mesh="right_thumb2" size="1 1 1" pos="-0.0519469790160656 0.008247618563473225 -0.0556987039744854" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="thumb3_mocap" mocap="true">
+        <geom type="mesh" mesh="right_thumb3" size="1 1 1" pos="-0.02972924336791039 0.01368059031665325 -0.07022282481193542" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="ring1_mocap" mocap="true">
+        <geom type="mesh" mesh="right_ring1" size="1 1 1" pos="-0.01393437385559082 -0.002426007762551308 0.02048688568174839" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="ring2_mocap" mocap="true">
+        <geom type="mesh" mesh="right_ring2" size="1 1 1" pos="0.01437989994883537 -0.004493014886975288 0.02558542415499687" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="ring3_mocap" mocap="true">
+        <geom type="mesh" mesh="right_ring3" size="1 1 1" pos="0.0379004180431366 -0.00280490331351757 0.03321924060583115" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="pinky1_mocap" mocap="true">
+        <geom type="mesh" mesh="right_pinky1" size="1 1 1" pos="-0.02688296139240265 0.003556899726390839 0.03702303022146225" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="pinky2_mocap" mocap="true">
+        <geom type="mesh" mesh="right_pinky2" size="1 1 1" pos="-0.009868551045656204 0.003495074575766921 0.04952181130647659" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="pinky3_mocap" mocap="true">
+        <geom type="mesh" mesh="right_pinky3" size="1 1 1" pos="0.00599835067987442 0.004186230711638927 0.05985371395945549" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="middle1_mocap" mocap="true">
+        <geom type="mesh" mesh="right_middle1" size="1 1 1" pos="-0.001009486615657806 -0.00490446574985981 -0.002828764962032437" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="middle2_mocap" mocap="true">
+        <geom type="mesh" mesh="right_middle2" size="1 1 1" pos="0.03017318062484264 -0.006765794008970261 0.002765744691714644" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="middle3_mocap" mocap="true">
+        <geom type="mesh" mesh="right_middle3" size="1 1 1" pos="0.0530778169631958 -0.005513689480721951 0.006710258312523365" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="index1_mocap" mocap="true">
+        <geom type="mesh" mesh="right_index1" size="1 1 1" pos="-0.007572680711746216 -0.0011830716393888 -0.0268722977489233" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="index2_mocap" mocap="true">
+        <geom type="mesh" mesh="right_index2" size="1 1 1" pos="0.02510622143745422 -0.005192427430301905 -0.02908936329185963" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+    <body name="index3_mocap" mocap="true">
+        <geom type="mesh" mesh="right_index3" size="1 1 1" pos="0.04726213216781616 -0.003894004039466381 -0.02897524461150169" contype="0" conaffinity="0" rgba="1 1 0 1"/>
+    </body>
+
+</mujoco>

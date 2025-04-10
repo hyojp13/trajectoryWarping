@@ -1,0 +1,72 @@
+<mujoco model="Allegro_right">
+
+    <body name="allegro_palm_mocap" mocap="true">
+        <geom type="mesh" mesh="base_link" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_th_base_mocap" mocap="true">
+        <geom type="mesh" mesh="link_12.0_right" size="1 1 1" contype="0" conaffinity="0"
+            rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_th_proximal_mocap" mocap="true">
+        <geom type="mesh" mesh="link_13.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_th_medial_mocap" mocap="true">
+        <geom type="mesh" mesh="link_14.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_th_distal_mocap" mocap="true">
+        <geom type="mesh" mesh="link_15.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_th_tip_mocap" mocap="true">
+        <geom type="mesh" mesh="link_15.0_tip" size="1 1 1" contype="0" conaffinity="0"
+            rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_ff_base_mocap" mocap="true">
+        <geom type="mesh" mesh="link_0.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_ff_proximal_mocap" mocap="true">
+        <geom type="mesh" mesh="link_1.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_ff_medial_mocap" mocap="true">
+        <geom type="mesh" mesh="link_2.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_ff_distal_mocap" mocap="true">
+        <geom type="mesh" mesh="link_3.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_ff_tip_mocap" mocap="true">
+        <geom type="mesh" mesh="link_3.0_tip" size="1 1 1" contype="0" conaffinity="0"
+            rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_mf_base_mocap" mocap="true">
+        <geom type="mesh" mesh="link_0.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_mf_proximal_mocap" mocap="true">
+        <geom type="mesh" mesh="link_1.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_mf_medial_mocap" mocap="true">
+        <geom type="mesh" mesh="link_2.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_mf_distal_mocap" mocap="true">
+        <geom type="mesh" mesh="link_3.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_mf_tip_mocap" mocap="true">
+        <geom type="mesh" mesh="link_3.0_tip" size="1 1 1" contype="0" conaffinity="0"
+            rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_rf_base_mocap" mocap="true">
+        <geom type="mesh" mesh="link_0.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_rf_proximal_mocap" mocap="true">
+        <geom type="mesh" mesh="link_1.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_rf_medial_mocap" mocap="true">
+        <geom type="mesh" mesh="link_2.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_rf_distal_mocap" mocap="true">
+        <geom type="mesh" mesh="link_3.0" size="1 1 1" contype="0" conaffinity="0" rgba="1 1 0 1" />
+    </body>
+    <body name="allegro_rf_tip_mocap" mocap="true">
+        <geom type="mesh" mesh="link_3.0_tip" size="1 1 1" contype="0" conaffinity="0"
+            rgba="1 1 0 1" />
+    </body>
+
+</mujoco>

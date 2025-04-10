@@ -1,0 +1,6 @@
+mujoco==3.2.7
+scipy==1.15.1
+torch==2.6.0
+scikit-learn==1.6.1
+trimesh==4.6.6
+rtree==1.4.0
