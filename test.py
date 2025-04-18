@@ -196,7 +196,7 @@ if __name__ == "__main__":
 
   m.opt.timestep = 2*seconds/frames
 
-  sim_time = np.linspace(0, 1, frames)
+  sim_time = np.linspace(startTime, endTime, frames)
   qpos_spline_data = np.array([spline(sim_time) for spline in splines]) # (51, frames, 2)
   object_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplines]) # (6, frames, 2)
   object_orig_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplinesOrig]) # (6, frames, 2)
@@ -217,7 +217,8 @@ if __name__ == "__main__":
 
   # object_repul_pos = read_obj("scene/curve_positions.obj")
 
-  retargeted_spline_pos = np.array(scipy.interpolate.splev(sim_time, retargeted_spline)).T
+  retargeted_sim_time = np.linspace(0, 1, frames)
+  retargeted_spline_pos = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_spline)).T
 
   object_shift = retargeted_spline_pos.T - object_orig_qpos[:3, :] # (3, frames)
   qpos[:3, :] += object_shift
