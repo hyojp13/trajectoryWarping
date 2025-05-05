@@ -157,27 +157,27 @@ def motionStartEnd(pos):
     print("Motion start index: ", start_index)
     print("Motion end index: ", stop_index)
 
-    #dist = np.sqrt(pos[0, :]**2 + pos[1, :]**2 + pos[2, :]**2)
+    dist = np.sqrt(pos[0, :]**2 + pos[1, :]**2 + pos[2, :]**2)
 
-    '''
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(10, 4))
-    plt.plot(np.arange(len(pos[0, :])-1), speed, label='Speed', color='gray')
-    plt.scatter(np.arange(len(pos[0, :])-1)[labels == 0], speed[labels == 0],
-                color='blue', label='Rest', alpha=0.6)
-    plt.scatter(np.arange(len(pos[0, :])-1)[labels == 1], speed[labels == 1],
-                color='red', label='Motion', alpha=0.6)
-    plt.xlabel('Time')
-    plt.ylabel('Speed')
-    '''
+    
+    # import matplotlib.pyplot as plt
+    # plt.figure(figsize=(10, 4))
+    # plt.plot(np.arange(len(pos[0, :])-1), speed, label='Speed', color='gray')
+    # plt.scatter(np.arange(len(pos[0, :])-1)[labels == 0], speed[labels == 0],
+    #             color='blue', label='Rest', alpha=0.6)
+    # plt.scatter(np.arange(len(pos[0, :])-1)[labels == 1], speed[labels == 1],
+    #             color='red', label='Motion', alpha=0.6)
+    # plt.xlabel('Time')
+    # plt.ylabel('Speed')
+    
 
-    '''plt.plot(np.arange(len(pos[0, :])), pos[2, :], label="z")
-    plt.plot(np.arange(len(pos[0, :])), pos[1, :], label="y")
-    plt.plot(np.arange(len(pos[0, :])), pos[0, :], label="x")
-    plt.plot(np.arange(len(pos[0, :])), dist, label="dist")
-    plt.plot(np.arange(len(pos[0, :])-1), speed, label="speed")
-    plt.legend(loc="upper left")
-    plt.show()'''
+    # plt.plot(np.arange(len(pos[0, :])), pos[2, :], label="z")
+    # plt.plot(np.arange(len(pos[0, :])), pos[1, :], label="y")
+    # plt.plot(np.arange(len(pos[0, :])), pos[0, :], label="x")
+    # plt.plot(np.arange(len(pos[0, :])), dist, label="dist")
+    # plt.plot(np.arange(len(pos[0, :])-1), speed, label="speed")
+    # plt.legend(loc="upper left")
+    # plt.show()
 
     return start_index, stop_index
 
@@ -357,10 +357,11 @@ def trajectoryConstraints(splines, startPos=None, endPos=None, waypts=None, floo
 
 
 
-def create_obj(splines, path, resolution = 100):
+def create_obj(splines, path, resolution):
     sim_time = np.linspace(0, 1, resolution)
     position = np.array([spline(sim_time) for spline in splines[:3]])
-    position = position[:, :, 1] # (3, frames)
+    if position.ndim == 3:
+        position = position[:, :, 1] # (3, frames)
 
     out_str = ''
 

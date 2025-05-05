@@ -110,6 +110,7 @@ if __name__ == "__main__":
   start_pos = np.array([0.11113561, -0.26607215, 0.8973825])
   end_pos = np.array([0.10741476, -0.23793504, 0.89747757])
   boundary_radius = 0.07
+  hand_boundary_radius = 0.15
 
   #barriers = [[start_pos + [0, -0.3, 0.2], 0.05],
   #            [start_pos + [0, -0.1, 0.18], 0.05],
@@ -137,10 +138,11 @@ if __name__ == "__main__":
             start_pos + [0, -0.5, 0.2]]
 
   barriers = []
-  barriers.append(('rect', {"dims": [0.12, 0.04, 0.14], "pos": [0.05, -0.46607215, 1.12]}))
+  barriers.append(('rect', {"dims": [0.12, 0.04, 0.14], "pos": [0.05, -0.40607215, 1.12]}))
   barriers.append(('sphere', {"rad": 0.05, "pos": [-0.08886439, -0.30607215, 1.1973825]}))
   barriers.append(('sphere', {"rad": 0.05, "pos": [-0.15, -0.35, 1.1973825]}))
   barriers.append(('sphere', {"rad": 0.05, "pos": [-0.15, -0.23, 1.1973825]}))
+  barriers.append(('sphere', {"rad": 0.09, "pos": [0.12, 0.05, 1]})) # intersection before/after contact
   barriers.append(('rect', {"dims": [0.25, 0.04, 0.16], "pos": [-0.15, -0.45, 1.15]}))
 
   # startShift = start_pos + ([-0.1, -0.1, 0.0])
@@ -156,6 +158,10 @@ if __name__ == "__main__":
 
   objectSplinesOrig, _, _ = parseSplines('startingTrajectories/' + AGENT + '/' + TASK + '/object.smexp')
 
+  # print(objectSplines)
+
+
+
   objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, endPos = endWayPt, waypts = waypts,
                                        floor_height = start_pos[2])
                                       #  bounding_sphere_radius=boundary_radius,
@@ -166,15 +172,21 @@ if __name__ == "__main__":
   
 
   frames = 702
-  startFrame = startTime * frames
+
+  # calculate number of frames for each segment of the trajectory
+  start_frame_count = int(frames * startTime)
+  contact_frame_count = int(frames * (endTime - startTime))
+  end_frame_count = frames - start_frame_count - contact_frame_count
+
+  # print(start_frame_count, contact_frame_count, end_frame_count)
+
+  # startFrame = startTime * frames
 
   # ensure that waypoints are not too close to a barrier
   if not barrierWayptsCheck(barriers, waypts, boundary_radius):
     raise Exception("waypoints are closer to the barrier than the object radius")
 
-  barrierConstraints(objectSplines, boundary_radius, waypts,
-                                    endWayPt,
-                                    barriers = barriers, resolution = frames, endObj=endObj)
+  barrierConstraints(objectSplines, boundary_radius, barriers = barriers, resolution = frames, endObj=endObj)
   
 
   # ensure all points are above the surface
@@ -192,11 +204,10 @@ if __name__ == "__main__":
 
   m = mujoco.MjModel.from_xml_path('env.xml')
   d = mujoco.MjData(m)
-
-
   m.opt.timestep = 2*seconds/frames
 
-  sim_time = np.linspace(startTime, endTime, frames)
+  sim_time = np.linspace(0, 1, frames)
+
   qpos_spline_data = np.array([spline(sim_time) for spline in splines]) # (51, frames, 2)
   object_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplines]) # (6, frames, 2)
   object_orig_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplinesOrig]) # (6, frames, 2)
@@ -217,27 +228,95 @@ if __name__ == "__main__":
 
   # object_repul_pos = read_obj("scene/curve_positions.obj")
 
-  retargeted_sim_time = np.linspace(0, 1, frames)
+
+
+  retargeted_sim_time = np.linspace(0, 1, contact_frame_count)
   retargeted_spline_pos = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_spline)).T
+
+  # add points for the position before and after contact
+  retargeted_start_pos = retargeted_spline_pos[0, :].reshape(1, -1)
+  retargeted_start_pos = np.repeat(retargeted_start_pos, start_frame_count, axis=0)
+  retargeted_end_pos = retargeted_spline_pos[-1, :].reshape(1, -1)
+  retargeted_end_pos = np.repeat(retargeted_end_pos, end_frame_count, axis=0)
+
+  # print(retargeted_spline_pos.shape, retargeted_start_pos.shape, retargeted_end_pos.shape)
+
+  retargeted_spline_pos = np.vstack((retargeted_start_pos, retargeted_spline_pos, retargeted_end_pos))
 
   object_shift = retargeted_spline_pos.T - object_orig_qpos[:3, :] # (3, frames)
   qpos[:3, :] += object_shift
-  
+
   save_obj(retargeted_spline_pos, "scene/curve_positions.obj")
 
   assert(len(retargeted_spline_pos) == frames)
+
+
+
+  # # retarget hand before and after contact
+  qpos_start = qpos[:3, :start_frame_count]
+  x1 = np.linspace(0, 1, start_frame_count)
+  start_splines = []
+  for i in range(3):
+      spl = scipy.interpolate.make_interp_spline(x1, qpos_start[i, :], k=3)
+      start_splines.append(spl)
+
+  # print(qpos.shape)
   
-  '''for i in range(100):
-    object_qpos[:3, i] += starting_loc_shift
+  # sq_distances = np.sum(( np.array( [ 0.04164962 ,-0.22759009 , 0.99819616]).reshape(3, 1) - qpos[:3, :])**2, axis=0)
+  # closest_idx = np.argmin(sq_distances)
+  # print(closest_idx, qpos[:3, closest_idx])
 
-  print(object_qpos[:3, 0])'''
 
-  #print(barrier_pos)
+  # sq_distances = np.sum(( np.array([ 0.2244669,  -0.58603104,  1.03235886]).reshape(3, 1)  - qpos[:3, :])**2, axis=0)
+  # closest_idx = np.argmin(sq_distances)
+  # print(closest_idx, qpos[:3, closest_idx])
+  
+  qpos_end = qpos[:3, -end_frame_count:]
+  x2 = np.linspace(0, 1, end_frame_count)
+  end_splines = []
+  for i in range(3):
+      spl = scipy.interpolate.make_interp_spline(x2, qpos_end[i, :], k=3)
+      end_splines.append(spl)
+
+  # print(qpos_end)
+
+  # retarget hand before contact
+  barrierConstraints(start_splines, hand_boundary_radius, barriers = barriers,
+                    resolution = start_frame_count, traj_path = "scene/hand_start_positions.obj")
+  
+  # ensure all points are above the surface
+  obj = read_obj("scene/hand_start_positions.obj")
+  obj[:, 2] = np.maximum(obj[:, 2], start_pos[2])
+  save_obj(obj, "scene/hand_start_positions.obj")
+
+  retargeted_start_trajectory = read_obj("scene/hand_start_positions.obj")
+  retargeted_start_spline = create_smoothing_bspline(retargeted_start_trajectory)
+  retargeted_sim_time = np.linspace(0, 1, start_frame_count)
+  qpos[:3, :start_frame_count] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_start_spline))
+
+
+  # retarget hand after contact
+  barrierConstraints(end_splines, hand_boundary_radius, barriers = barriers,
+                    resolution = end_frame_count, traj_path = "scene/hand_end_positions.obj")
+  
+  # ensure all points are above the surface
+  obj = read_obj("scene/hand_end_positions.obj")
+  obj[:, 2] = np.maximum(obj[:, 2], start_pos[2])
+  save_obj(obj, "scene/hand_end_positions.obj")
+
+
+  retargeted_end_trajectory = read_obj("scene/hand_end_positions.obj")
+  retargeted_end_spline = create_smoothing_bspline(retargeted_end_trajectory)
+  retargeted_sim_time = np.linspace(0, 1, end_frame_count)
+  # np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_end_spline))
+  qpos[:3, -end_frame_count:] = retargeted_end_trajectory.T
+
+  
 
   frame_pts = []
   obj_frame_pts = []
-  obj_repul_frame_pts = []
   obj_orig_frame_pts = []
+  obj_retarget_frame_pts = []
   
 
   with mujoco.viewer.launch_passive(m, d) as viewer:
@@ -257,14 +336,14 @@ if __name__ == "__main__":
       if i % frames == 0:
         frame_pts = []
         obj_frame_pts = []
-        obj_repul_frame_pts = []
+        obj_retarget_frame_pts = []
         obj_orig_frame_pts = []
 
 
       frame_pts.append(qpos[:3, i % frames])
-      obj_frame_pts.append(object_qpos[:3, i % frames])
-      obj_repul_frame_pts.append(retargeted_spline_pos[i % frames])
-      obj_orig_frame_pts.append(object_orig_qpos[:3, i % frames])
+      # obj_frame_pts.append(object_qpos[:3, i % frames])    # uncomment to visualize
+      obj_retarget_frame_pts.append(retargeted_spline_pos[i % frames])
+      # obj_orig_frame_pts.append(object_orig_qpos[:3, i % frames])
 
       geometry_count = 0
 
@@ -301,16 +380,28 @@ if __name__ == "__main__":
         )
       geometry_count += len(obj_frame_pts)
 
-      for j in range(len(obj_repul_frame_pts)):
+      if len(obj_retarget_frame_pts) <= start_frame_count:
+        rgba = np.array([0, 0, 1, 1])
+      elif len(obj_retarget_frame_pts) <= start_frame_count+contact_frame_count:
+        rgba = np.array([0, 1, 0, 1])
+      else:
+        rgba = np.array([1, 0, 0, 1])
+
+      if len(obj_retarget_frame_pts) == start_frame_count+1:
+        print("Contact start point: ", frame_pts[-1])
+      if len(obj_retarget_frame_pts) == start_frame_count+contact_frame_count+1:
+        print("End start point: ", frame_pts[-1])
+
+      for j in range(len(obj_retarget_frame_pts)):
         mujoco.mjv_initGeom(
             viewer.user_scn.geoms[j + geometry_count],
             type=mujoco.mjtGeom.mjGEOM_SPHERE,
             size=[0.005, 0, 0],
-            pos=np.array(obj_repul_frame_pts[j]),
+            pos=np.array(obj_retarget_frame_pts[j]),
             mat=np.eye(3).flatten(),
-            rgba=np.array([0, 1, j % frames / frames, 1])
+            rgba=rgba
         )
-      geometry_count += len(obj_repul_frame_pts)
+      geometry_count += len(obj_retarget_frame_pts)
 
       # barrier
       if barriers is not None:
@@ -338,7 +429,17 @@ if __name__ == "__main__":
           viewer.user_scn.geoms[geometry_count],
           type=mujoco.mjtGeom.mjGEOM_SPHERE,
           size=[boundary_radius, 0, 0],
-          pos=np.array(obj_repul_frame_pts[i % frames]),
+          pos=np.array(obj_retarget_frame_pts[i % frames]),
+          mat=np.eye(3).flatten(),
+          rgba=np.array([0.0, 0.0, 0.5, 0.3]))
+      geometry_count += 1
+
+      # hand bounding sphere
+      mujoco.mjv_initGeom(
+          viewer.user_scn.geoms[geometry_count],
+          type=mujoco.mjtGeom.mjGEOM_SPHERE,
+          size=[hand_boundary_radius, 0, 0],
+          pos=np.array(frame_pts[i % frames]),
           mat=np.eye(3).flatten(),
           rgba=np.array([0.0, 0.0, 0.5, 0.3]))
       geometry_count += 1

@@ -184,7 +184,13 @@ def enterEndObj(trajectoryFile, endObj, n=10):
 
 
 
-def barrierConstraints(splines, object_radius, waypts, endpt, barriers, resolution, endObj=None, iteration_limit=50):
+def barrierConstraints(splines, object_radius, barriers, resolution, endObj=None, traj_path = "scene/curve_positions.obj"):
+    create_obj(splines, traj_path, resolution = resolution)
+    create_obj(splines, traj_path[:-4] + "temp.obj", resolution = resolution)
+
+    # if traj_path == "scene/hand_end_positions.obj":
+        # return
+    
     scene_file = 'curve curve_positions.obj\n'
     scene_file += 'repel_curve\n'
     scene_file += 'fix_endpoint_vertices\n'
@@ -192,13 +198,6 @@ def barrierConstraints(splines, object_radius, waypts, endpt, barriers, resoluti
     #scene_file += 'repel_plane 0 ' + str(floor_height-0.05) + ' 0 0 1 0\n'
     scene_file += 'fix_length\n'
 
-    create_obj(splines, "scene/curve_positions.obj", resolution = resolution)
-
-    wayPointIdx = get_wayPointIdx(waypts, read_obj("scene/curve_positions.obj"))
-
-    if wayPointIdx is not None:
-        for w in wayPointIdx:
-            scene_file += 'fix_vertex ' + str(w) + '\n'
 
     for i, (barr_type, config) in enumerate(barriers):
         name = 'barrier' + str(i) + '.obj'
@@ -206,63 +205,34 @@ def barrierConstraints(splines, object_radius, waypts, endpt, barriers, resoluti
         scene_file += 'repel_surface ' + name + '\n'
 
     # scene_file += 'fix_length'
-        
-    scene_file += 'iteration_limit ' + str(iteration_limit) + '\n'
     f = open("scene/temp.txt", "w")
     f.write(scene_file)
     f.close()
+
 
     for i, (barr_type, config) in enumerate(barriers):
         name = 'barrier' + str(i) + '.obj'
         path = "scene/" + name
         generate_barrier(object_radius, barr_type, config, path=path)
-        intersectionCount = trajectoryBarrierIntersectionCount("scene/curve_positions.obj", 'scene/barrier' + str(i) + '.obj')
+
+        # create_obj(splines, traj_path[:-4] + "_dense.obj", resolution = 10000)
+        intersectionCount = trajectoryBarrierIntersectionCount(traj_path, path)
         # print(intersectionCount)
 
         # no preprocessing needed, object does not intersect with trajectory
         if intersectionCount == 0:
+            print("No intersections with: " + path)
             continue
         
         # identify points in the intersection and move them to the surface
         else:
-            correctTrajectory("scene/curve_positions.obj", 'scene/barrier' + str(i) + '.obj')
-
-    # optimizeCurve(api, "scene/temp.txt", "scene/curve_positions.obj", "scene/curve_tangents.obj")
+            correctTrajectory(traj_path, path)
 
     if endObj is not None:   
         scale_obj(endObj, object_radius)
-        correctTrajectory("scene/curve_positions.obj", endObj)
+        correctTrajectory(traj_path, endObj)
 
-        enterEndObj("scene/curve_positions.obj", endObj)
-
-
-
-
-    '''for percentage in percentage_steps(0.05, 1, 20, linear=True):
-        print("PERCENTAGE: ", percentage)
-        totalCount = 0  # total number of points nearby barriers (with repeats)
-
-        # generate scale barriers
-        for i, (barr_type, config) in enumerate(barriers):
-            name = 'barrier' + str(i) + '.obj'
-            path = "scene/" + name
-            generate_barrier(object_radius * percentage, barr_type, scale(barr_type, config, percentage), path=path)
-            intersectionCount = trajectoryBarrierIntersectionCount("scene/curve_positions.obj", 'scene/barrier' + str(i) + '.obj')
-            print(intersectionCount)
-            #nearbyCount = trajectoryBarrierNearbyCount("scene/curve_positions.obj", 'scene/barrier' + str(i) + '.obj', radius=0.05)
-            #totalCount += nearbyCount
-            #print("BARRIER " + str(i) + ": " + str(nearbyCount))
-
-        # adaptively increase the length of the curve if neccesary
-        scene_file = scene_file.rsplit('\n', 1)[0]
-        if percentage != 1:
-            scene_file += '\niteration_limit ' + str(iteration_limit)
-        #scene_file += '\nfix_edgelengths ' + str(1 + min(1, totalCount / resolution))
-        f = open("scene/temp.txt", "w")
-        f.write(scene_file)
-        f.close()
-
-        optimizeCurve(api, "scene/temp.txt", "scene/curve_positions.obj", "scene/curve_tangents.obj")'''
+        enterEndObj(traj_path, endObj)
 
 
 
@@ -293,8 +263,8 @@ def barrierWayptsCheck(barriers, waypts, object_radius):
     return True
 
 
-def cleanTrajectory(floor_height, startTime, endTime, objectSplines, resolution):
-    obj = read_obj("scene/curve_positions.obj")
+def cleanTrajectory(floor_height, startTime, endTime, objectSplines, resolution, traj_path):
+    obj = read_obj(traj_path)
     obj[:, 2] = np.maximum(obj[:, 2], floor_height)
 
     sim_time = np.linspace(0, 1, resolution)
@@ -309,4 +279,4 @@ def cleanTrajectory(floor_height, startTime, endTime, objectSplines, resolution)
     obj[endTime:, 1] = spline_data[1, endTime:]
     obj[endTime:, 2] = spline_data[2, endTime:]
 
-    save_obj(obj, "scene/curve_positions.obj")
+    save_obj(obj, traj_path)
