@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+from trajectory import motionStartEnd
 
 def remove_duplicate_points(points):
     diff = np.diff(points, axis=0)
@@ -32,11 +33,19 @@ def create_smoothing_bspline(points, smoothing=None, degree=3):
     if smoothing is None:
         smoothing = points.shape[0]
 
+    # print("RUNNING:")
+    # motionStartEnd(points)
+
     points = remove_duplicate_points(points)
     t = chord_length_parameterize(points)
+    t_uniform = np.linspace(0, 1, len(points))
     x, y, z = points.T
 
-    spline, u = scipy.interpolate.splprep([x, y, z], u=t, s=0.001, k=degree)
+    spline, u = scipy.interpolate.splprep([x, y, z], u=t_uniform, s=0.001, k=degree)
     # u = parameterization
+
+    t, c, k = spline
+
+    splines = [scipy.interpolate.BSpline(t, c[i], k) for i in range(3)]
     
-    return spline
+    return splines
