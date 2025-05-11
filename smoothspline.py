@@ -29,23 +29,30 @@ def chord_length_parameterize(points):
         
     return t
 
-def create_smoothing_bspline(points, smoothing=None, degree=3):
+def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization="uniform"):
     if smoothing is None:
         smoothing = points.shape[0]
 
     # print("RUNNING:")
     # motionStartEnd(points)
+    
 
     points = remove_duplicate_points(points)
-    t = chord_length_parameterize(points)
-    t_uniform = np.linspace(0, 1, len(points))
     x, y, z = points.T
 
-    spline, u = scipy.interpolate.splprep([x, y, z], u=t_uniform, s=0.001, k=degree)
+    if parameterization == "uniform":
+        t = np.linspace(0, 1, len(points))
+    elif parameterization == "chord":
+        t = chord_length_parameterize(points)
+    else:
+        raise Exception("unavailable parameterization format")
+    
+
+    spline, u = scipy.interpolate.splprep([x, y, z], u=t, s=0.001, k=degree)
     # u = parameterization
 
     t, c, k = spline
 
     splines = [scipy.interpolate.BSpline(t, c[i], k) for i in range(3)]
     
-    return splines
+    return spline

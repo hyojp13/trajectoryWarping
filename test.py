@@ -161,10 +161,9 @@ if __name__ == "__main__":
   # print(objectSplines)
 
 
-  objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, endPos = endObjPos, waypts = waypts,
-                                        floor_height = start_pos[2])
-  # objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, endPos = endWayPt, waypts = waypts,
-  #                                      floor_height = start_pos[2])
+
+  objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, endPos = endWayPt, waypts = waypts,
+                                       floor_height = start_pos[2])
                                       #  bounding_sphere_radius=boundary_radius,
                                       #  barriers=barriers)
 
@@ -174,12 +173,24 @@ if __name__ == "__main__":
 
   frames = 702
 
+  # calculate number of frames for each segment of the trajectory
+  start_frame_count = int(frames * startTime)
+  contact_frame_count = int(frames * (endTime - startTime))
+  end_frame_count = frames - start_frame_count - contact_frame_count
+
+  print("Frames before contact:", start_frame_count)
+  print("Frames of contact:", contact_frame_count)
+  print("Frames after contact:", end_frame_count)
+
+  # print(start_frame_count, contact_frame_count, end_frame_count)
+
+  # startFrame = startTime * frames
+
   # ensure that waypoints are not too close to a barrier
   if not barrierWayptsCheck(barriers, waypts, boundary_radius):
     raise Exception("waypoints are closer to the barrier than the object radius")
 
-  # barrierConstraints(objectSplines, boundary_radius, barriers = barriers, resolution = frames, endObj=endObj)
-  barrierConstraints(objectSplines, boundary_radius, barriers = barriers, resolution = frames)
+  barrierConstraints(objectSplines, boundary_radius, barriers = barriers, resolution = frames, endObj=endObj)
   
 
   # ensure all points are above the surface
@@ -189,7 +200,7 @@ if __name__ == "__main__":
 
 
   trajectory = read_obj("scene/curve_positions.obj")
-  retargeted_splines = create_smoothing_bspline(trajectory)
+  retargeted_spline = create_smoothing_bspline(trajectory, parameterization="chord")
   
   # (outdated, for repulsive curves) prevent motion before and after contact
   # (outdated, for repulsive curves) NOTE: assumes that frames = resolution in barrierConstraints
@@ -223,46 +234,29 @@ if __name__ == "__main__":
 
 
 
-  retargeted_sim_time = np.linspace(0, 1, frames)
-  retargeted_spline_pos = np.array([spline(retargeted_sim_time) for spline in retargeted_splines]) # (3, frames)
-  # retargeted_spline_pos = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_spline)).T
+  retargeted_sim_time = np.linspace(0, 1, contact_frame_count)
+  retargeted_spline_pos = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_spline)).T
 
   # add points for the position before and after contact
-  # retargeted_start_pos = retargeted_spline_pos[0, :].reshape(1, -1)
-  # retargeted_start_pos = np.repeat(retargeted_start_pos, start_frame_count, axis=0)
-  # retargeted_end_pos = retargeted_spline_pos[-1, :].reshape(1, -1)
-  # retargeted_end_pos = np.repeat(retargeted_end_pos, end_frame_count, axis=0)
+  retargeted_start_pos = retargeted_spline_pos[0, :].reshape(1, -1)
+  retargeted_start_pos = np.repeat(retargeted_start_pos, start_frame_count, axis=0)
+  retargeted_end_pos = retargeted_spline_pos[-1, :].reshape(1, -1)
+  retargeted_end_pos = np.repeat(retargeted_end_pos, end_frame_count, axis=0)
 
   # print(retargeted_spline_pos.shape, retargeted_start_pos.shape, retargeted_end_pos.shape)
 
-  # retargeted_spline_pos = np.vstack((retargeted_start_pos, retargeted_spline_pos, retargeted_end_pos))
+  retargeted_spline_pos = np.vstack((retargeted_start_pos, retargeted_spline_pos, retargeted_end_pos))
 
-  object_shift = retargeted_spline_pos - object_orig_qpos[:3, :] # (3, frames)
+  object_shift = retargeted_spline_pos.T - object_orig_qpos[:3, :] # (3, frames)
   qpos[:3, :] += object_shift
 
-  save_obj(retargeted_spline_pos.T, "scene/curve_positions.obj")
+  save_obj(retargeted_spline_pos, "scene/curve_positions.obj")
 
-  assert(len(retargeted_spline_pos.T) == frames)
-
-
-  startIdx, endIdx = motionStartEnd(retargeted_spline_pos)
-  # print(startIdx, endIdx)
-
-  # calculate number of frames for each segment of the trajectory
-  # start_frame_count = int(frames * startTime)
-  # contact_frame_count = int(frames * (endTime - startTime))
-  # end_frame_count = frames - start_frame_count - contact_frame_count
-  start_frame_count = startIdx
-  contact_frame_count = endIdx - startIdx
-  end_frame_count = frames - start_frame_count - contact_frame_count
-
-  print("Frames before contact:", start_frame_count)
-  print("Frames of contact:", contact_frame_count)
-  print("Frames after contact:", end_frame_count)
+  assert(len(retargeted_spline_pos) == frames)
 
 
 
-  # retarget hand before and after contact
+  # # retarget hand before and after contact
   qpos_start = qpos[:3, :start_frame_count]
   x1 = np.linspace(0, 1, start_frame_count)
   start_splines = []
@@ -300,9 +294,9 @@ if __name__ == "__main__":
   save_obj(obj, "scene/hand_start_positions.obj")
 
   retargeted_start_trajectory = read_obj("scene/hand_start_positions.obj")
-  # retargeted_start_spline = create_smoothing_bspline(retargeted_start_trajectory)
-  # retargeted_sim_time = np.linspace(0, 1, start_frame_count)
-  # qpos[:3, :start_frame_count] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_start_spline))
+  retargeted_start_spline = create_smoothing_bspline(retargeted_start_trajectory, parameterization="uniform")
+  retargeted_sim_time = np.linspace(0, 1, start_frame_count)
+  qpos[:3, :start_frame_count] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_start_spline))
   # qpos[:3, :start_frame_count] = retargeted_start_trajectory.T
 
 
@@ -317,9 +311,9 @@ if __name__ == "__main__":
 
 
   retargeted_end_trajectory = read_obj("scene/hand_end_positions.obj")
-  # retargeted_end_spline = create_smoothing_bspline(retargeted_end_trajectory)
-  # retargeted_sim_time = np.linspace(0, 1, end_frame_count)
-  # qpos[:3, -end_frame_count:] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_end_spline))
+  retargeted_end_spline = create_smoothing_bspline(retargeted_end_trajectory, parameterization="uniform")
+  retargeted_sim_time = np.linspace(0, 1, end_frame_count)
+  qpos[:3, -end_frame_count:] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_end_spline))
   # qpos[:3, -end_frame_count:] = retargeted_end_trajectory.T
 
   
@@ -340,7 +334,7 @@ if __name__ == "__main__":
       #d.qpos[:3] = qpos[:3, i % frames]
 
       d.qpos = qpos[:, i % frames]
-      d.mocap_pos = retargeted_spline_pos[:, i % frames]
+      d.mocap_pos = retargeted_spline_pos[i % frames]
       d.mocap_quat = object_qpos[3:, i % frames]
 
 
@@ -353,7 +347,7 @@ if __name__ == "__main__":
 
       frame_pts.append(qpos[:3, i % frames])
       # obj_frame_pts.append(object_qpos[:3, i % frames])    # uncomment to visualize
-      obj_retarget_frame_pts.append(retargeted_spline_pos[:, i % frames])
+      obj_retarget_frame_pts.append(retargeted_spline_pos[i % frames])
       # obj_orig_frame_pts.append(object_orig_qpos[:3, i % frames])
 
       geometry_count = 0
