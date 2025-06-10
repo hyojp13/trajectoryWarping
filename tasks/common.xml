@@ -29,6 +29,6 @@
         <material name="site" rgba=".5 .5 .5 .3"/>
     </asset>
 
-    <size memory="1M"/>
+    <!-- <size memory="1M"/> -->
 
 </mujoco>

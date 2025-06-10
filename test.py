@@ -206,7 +206,7 @@ if __name__ == "__main__":
   # (outdated, for repulsive curves) NOTE: assumes that frames = resolution in barrierConstraints
   # cleanTrajectory(start_pos[2], int(startTime*frames), int(endTime*frames), objectSplines[:3], frames)
 
-  m = mujoco.MjModel.from_xml_path('env.xml')
+  m = mujoco.MjModel.from_xml_path('kitchen.xml')
   d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
 

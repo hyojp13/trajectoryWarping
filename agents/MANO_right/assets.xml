@@ -23,22 +23,22 @@
     <asset>
         <material name="hand_color" rgba="0.91796875 0.765 0.5234 1" />
 
-        <mesh file="geom_assets/right_wrist.obj" />
-        <mesh file="geom_assets/right_index1.obj" />
-        <mesh file="geom_assets/right_index2.obj" />
-        <mesh file="geom_assets/right_index3.obj" />
-        <mesh file="geom_assets/right_middle1.obj" />
-        <mesh file="geom_assets/right_middle2.obj" />
-        <mesh file="geom_assets/right_middle3.obj" />
-        <mesh file="geom_assets/right_pinky1.obj" />
-        <mesh file="geom_assets/right_pinky2.obj" />
-        <mesh file="geom_assets/right_pinky3.obj" />
-        <mesh file="geom_assets/right_ring1.obj" />
-        <mesh file="geom_assets/right_ring2.obj" />
-        <mesh file="geom_assets/right_ring3.obj" />
-        <mesh file="geom_assets/right_thumb1.obj" />
-        <mesh file="geom_assets/right_thumb2.obj" />
-        <mesh file="geom_assets/right_thumb3.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_wrist.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_index1.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_index2.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_index3.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_middle1.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_middle2.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_middle3.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_pinky1.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_pinky2.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_pinky3.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_ring1.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_ring2.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_ring3.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_thumb1.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_thumb2.obj" />
+        <mesh file="/Users/hjp/Desktop/trajectoryRetargeting/agents/MANO_right/geom_assets/right_thumb3.obj" />
     </asset>
 
     <contact>

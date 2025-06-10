@@ -1,22 +1,22 @@
 <mujoco model="flashlight_on">
 
-    <include file="common.xml" />
+    <!-- <include file="common.xml" /> -->
 
     <asset>
-        <mesh name="flashlight" file="geom_assets/flashlight.obj" />
+        <mesh name="flashlight" file="/Users/hjp/Desktop/trajectoryRetargeting/tasks/geom_assets/flashlight.obj" />
     </asset>
 
     <worldbody>
-        <light pos="0 -0.1 0.5" dir="0 0.2 -1" diffuse="0.7 0.7 0.7" specular="0.3 0.3 0.3"
-            directional="true" castshadow="true" />
+        <!-- <light pos="0 -0.1 0.5" dir="0 0.2 -1" diffuse="0.7 0.7 0.7" specular="0.3 0.3 0.3" -->
+            <!-- directional="true" castshadow="true" /> -->
         <body name="flashlight_mocap" mocap="true">
-            <geom type="mesh" mesh="flashlight" contype="0" conaffinity="0" rgba="0 1 0 1.0" />
+            <geom type="mesh" mesh="flashlight" contype="0" conaffinity="0"  group="2" rgba="0 1 0 1.0" />
         </body>
-        <body name="tablebody">
+        <!-- <body name="tablebody">
             <geom name="table" pos="0.13301 -0.7 0.885" size="0.5 0.5 0.5" type="plane" group="2"
                 material="grey_grid" />
-        </body>
-        <geom name="floor" pos="0 0 -0.2" size="0 0 0.05" type="plane" material="blue_grid" />
+        </body> -->
+        <!-- <geom name="floor" pos="0 0 -0.2" size="0 0 0.05" type="plane" material="blue_grid" /> -->
     </worldbody>
 
 </mujoco>
