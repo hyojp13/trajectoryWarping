@@ -16,8 +16,8 @@ from barrier import *
 from generateBinObj import *
 from smoothspline import *
 
-AGENT="MANO_right"
-TASK="flashlight_on"
+AGENT="trajectories"
+TASK="bowl_lift"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -206,7 +206,7 @@ if __name__ == "__main__":
   # (outdated, for repulsive curves) NOTE: assumes that frames = resolution in barrierConstraints
   # cleanTrajectory(start_pos[2], int(startTime*frames), int(endTime*frames), objectSplines[:3], frames)
 
-  m = mujoco.MjModel.from_xml_path('kitchen.xml')
+  m = mujoco.MjModel.from_xml_path('kitchen2.xml')
   d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
 
@@ -222,7 +222,7 @@ if __name__ == "__main__":
   object_qpos_spline_data = object_qpos_spline_data[:, :, 1] # (6, frames)
   object_orig_qpos_spline_data = object_orig_qpos_spline_data[:, :, 1] # (6, frames)
 
-  if AGENT == 'MANO_right':
+  if AGENT == 'MANO_right' or AGENT == 'trajectories':
     qpos = convert_to_quaternions_MANO(qpos_spline_data)
   if AGENT == 'Allegro_right':
     qpos = convert_to_quaternions_Allegro(qpos_spline_data)
