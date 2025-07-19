@@ -537,14 +537,14 @@
 		<include file="agents/MANO_right/body.xml" />
 
     <light pos="2 -2 2" dir="0.009999 0.009999 -0.9999" directional="true" castshadow="false" ambient="0.3 0.3 0.3" diffuse="0.3 0.3 0.3"/>
-    <body name="left_eef_target" pos="0 0 -1" mocap="true">
+    <!-- <body name="left_eef_target" pos="0 0 -1" mocap="true">
       <geom name="left_eef_target_box" size="0.05 0.05 0.05" type="box" contype="0" conaffinity="0" group="2" rgba="0.898 0.42 0.435 0.5"/>
       <geom name="left_eef_target_sphere" size="0.01" contype="0" conaffinity="0" group="2" rgba="0.898 0.42 0.435 0.8"/>
     </body>
     <body name="right_eef_target" pos="0 0 -1" mocap="true">
       <geom name="right_eef_target_box" size="0.05 0.05 0.05" type="box" contype="0" conaffinity="0" group="2" rgba="0.208 0.314 0.439 0.5"/>
       <geom name="right_eef_target_sphere" size="0.01" contype="0" conaffinity="0" group="2" rgba="0.208 0.314 0.439 0.8"/>
-    </body>
+    </body> -->
     <!-- <body name="robot0_base" pos="0.799988 -0.949997 0" quat="1.8366e-06 0 0 -1">
       <inertial pos="0 0 0" mass="0" diaginertia="0 0 0"/>
       <camera name="robot0_robotview" pos="1 0 0.4" quat="0.653098 0.271041 0.271041 0.653098"/>

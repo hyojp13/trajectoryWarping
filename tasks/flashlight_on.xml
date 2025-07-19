@@ -3,7 +3,9 @@
     <!-- <include file="common.xml" /> -->
 
     <asset>
-        <mesh name="flashlight" file="/Users/hjp/Desktop/trajectoryRetargeting/tasks/geom_assets/flashlight.obj" />
+        <!-- <mesh name="flashlight" file="/Users/hjp/Desktop/trajectoryRetargeting/tasks/geom_assets/flashlight.obj" /> -->
+        <!-- <mesh name="flashlight" file="/Users/hjp/Desktop/exports/s1/bowl_lift_full_export_objectmesh.obj" /> -->
+        <mesh name="flashlight" file="/Users/hjp/Desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj"/>
     </asset>
 
     <worldbody>

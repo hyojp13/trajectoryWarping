@@ -17,7 +17,7 @@ from generateBinObj import *
 from smoothspline import *
 
 AGENT="trajectories"
-TASK="bowl_lift"
+TASK="fryingpan_cook"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -31,7 +31,7 @@ def build_env_xml(agentName, taskName):
   ET.SubElement(worldBody, "include", file="agents/{0}/body.xml".format(agentName))
   
   #ET.SubElement(worldBody, "include", file="agents/{0}/mocap_bodies.xml".format(agentName))
-  
+
   tree = ET.ElementTree(root)
   
   ET.indent(tree, space="\t", level=0)
@@ -78,100 +78,113 @@ def convert_to_quaternions_object(qpos_spline_data):
   return qpos
 
 
+def rotate_keyframe_angles(keyframes, rotation):
+    """
+    Add rotation to existing orientations in keyframes
+    keyframes: (6, n_frames) array 
+    rotation: [rx, ry, rz] to add to existing rotations
+    """
+    keyframes_modified = keyframes.copy()
+    
+    additional_rot = R.from_euler('xyz', np.radians(rotation))
+    
+    for i in range(keyframes.shape[1]):
+        # Get existing rotation
+        existing_euler = keyframes[3:6, i]
+        existing_rot = R.from_euler('xyz', existing_euler)
+        
+        combined_rot = additional_rot * existing_rot
+        
+        # Convert back to euler and store
+        keyframes_modified[3:6, i] = combined_rot.as_euler('xyz')
+    
+    return keyframes_modified
+
 
 if __name__ == "__main__":
   build_env_xml(AGENT, TASK)
 
-  # apple
-  '''start_pos = np.array([0.10897509, -0.00805262, 0.88921297])
-  boundary_radius = 0.07
-
-  barrier_pos1 = start_pos + [-0.1, -0.35, 0.6]
-  barrier_radius1 = 0.08
-  barrier_pos2 = start_pos + [0.05, 0.1, 0.2]
-  barrier_radius2 = 0.05
-
-  barriers = [[barrier_pos1, barrier_radius1], [barrier_pos2, barrier_radius2]]
-
-  waypts = [start_pos + [0, 0.2, 0.5],
-            start_pos + [0, -0.5, 0.2],
-            start_pos + [-0.3, 0, 0.7]]
-
-  startShift = start_pos + np.array([0.5, -0.5, 0.0])'''
-
-  #flashlight
-  '''start_pos = np.array([0.11113561, -0.26607215, 0.8973825])
-  end_pos = np.array([0.10741476, -0.23793504, 0.89747757])
-  boundary_radius = 0.09
-  barriers = [[start_pos + [-0.3, 0, 0.2], 0.1]]
-  endShift = end_pos + ([-0.2, -0.2, 0.0])
-  waypts = []'''
-
-  start_pos = np.array([0.11113561, -0.26607215, 0.8973825])
-  end_pos = np.array([0.10741476, -0.23793504, 0.89747757])
-  boundary_radius = 0.07
-  hand_boundary_radius = 0.15
-
-  #barriers = [[start_pos + [0, -0.3, 0.2], 0.05],
-  #            [start_pos + [0, -0.1, 0.18], 0.05],
-  #            [start_pos + [0, -0.35, 0.15], 0.05],
-  #            [start_pos + [0.1, -0.35, 0.23], 0.05],
-  #            [start_pos + [0.05, -0.2, 0.15], 0.05],
-  #            [start_pos + [-0.05, -0.4, 0.25], 0.05],
-  #            [start_pos + [-0.05, -0.2, 0.25], 0.05]]
-  #barriers = [[start_pos + [-0.2, 0, 0.4], 0.05]]
-  #barriers = None
-
-
-  endObjPos = end_pos + ([0.2, -0.4, 0.08])
-
-  # generate desired end object
-  basket_mesh = create_basket(radius=0.1, height=0.16, wall_thickness=0.01)
-  basket_mesh.export('scene/basket.obj')
-  shift_obj('scene/basket.obj', endObjPos)
-
-  # determine entrance to object
-  endWayPt = getEntrance('scene/basket.obj')
-
-  endObj = 'scene/basket.obj'
-  waypts = [start_pos + [-0.2, 0, 0.5],
-            start_pos + [0, -0.5, 0.2]]
-
-  barriers = []
-  barriers.append(('rect', {"dims": [0.12, 0.04, 0.14], "pos": [0.05, -0.40607215, 1.12]}))
-  barriers.append(('sphere', {"rad": 0.05, "pos": [-0.08886439, -0.30607215, 1.1973825]}))
-  barriers.append(('sphere', {"rad": 0.05, "pos": [-0.15, -0.35, 1.1973825]}))
-  barriers.append(('sphere', {"rad": 0.05, "pos": [-0.15, -0.23, 1.1973825]}))
-  barriers.append(('sphere', {"rad": 0.09, "pos": [0.12, 0.05, 1]})) # intersection before/after contact
-  barriers.append(('rect', {"dims": [0.25, 0.04, 0.16], "pos": [-0.15, -0.45, 1.15]}))
-
-  # startShift = start_pos + ([-0.1, -0.1, 0.0])
-  # endWayPt = end_pos + ([0, -0.4, 0.0])
-  # waypts = [start_pos + [-0.25, 0.1, 0.3], start_pos + [0.1, -0.5, 0.1]]
-  # barriers = []
-  # # barriers.append(('sphere', {"rad": 0.2, "pos": [0.05, -0.46607215, 1.12]}))
-  # barriers.append(('rect', {"dims": [0.4, 0.2, 0.5], "pos": [0.05, -0.46607215, 1.12]}))
-  
-
+  # retrieve splines
   splines, seconds, _ = parseSplines('startingTrajectories/' + AGENT + '/' + TASK + '/hand.smexp')
   objectSplines, objectSeconds, _ = parseSplines('startingTrajectories/' + AGENT + '/' + TASK + '/object.smexp')
 
   objectSplinesOrig, _, _ = parseSplines('startingTrajectories/' + AGENT + '/' + TASK + '/object.smexp')
 
+  # configurations
+  frames = 1000
+  m = mujoco.MjModel.from_xml_path('kitchen2.xml')
+  d = mujoco.MjData(m)
+  m.opt.timestep = 2*seconds/frames
+  sim_time = np.linspace(0, 1, frames)
+
+
+  # read splines to numpy
+  qpos_spline_data = np.array([spline(sim_time) for spline in splines]) # (51, frames, 2)
+  object_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplines]) # (6, frames, 2)
+  object_orig_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplinesOrig]) # (6, frames, 2)
+
+  qpos_frames = qpos_spline_data[0, :, 0] # frames are same for all dof
+  qpos_spline_data = qpos_spline_data[:, :, 1] # (51, frames)
+
+  object_qpos_spline_data = object_qpos_spline_data[:, :, 1] # (6, frames)
+  object_orig_qpos_spline_data = object_orig_qpos_spline_data[:, :, 1] # (6, frames)
+
+  rotation = [0, 0, 146.441]
+  qpos_spline_data = rotate_keyframe_angles(qpos_spline_data, rotation)
+  object_qpos_spline_data = rotate_keyframe_angles(object_qpos_spline_data, rotation)
+  object_orig_qpos_spline_data = rotate_keyframe_angles(object_qpos_spline_data, rotation)
+
+  if AGENT == 'MANO_right' or AGENT == 'trajectories':
+    qpos = convert_to_quaternions_MANO(qpos_spline_data)
+  if AGENT == 'Allegro_right':
+    qpos = convert_to_quaternions_Allegro(qpos_spline_data)
+
+  object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
+  object_orig_qpos = convert_to_quaternions_object(object_orig_qpos_spline_data)  # without waypoint
+
+  start_pos = object_qpos[:3, 0]
+  end_pos = object_qpos[:3, frames-1]
+
+
+  boundary_radius = 0.1
+  hand_boundary_radius = 0.15
+
+  newStartPos = start_pos + ([-0.23, 0.18, 0])
+  endObjPos = end_pos + ([0.28, 0.18, 0])
+
+  # generate desired end object
+  # basket_mesh = create_basket(radius=0.1, height=0.16, wall_thickness=0.01)
+  # basket_mesh.export('scene/basket.obj')
+  # shift_obj('scene/basket.obj', endObjPos)
+
+  # determine entrance to object
+  # endWayPt = getEntrance('scene/basket.obj')
+
+  # endObj = 'scene/basket.obj'
+  # waypts = [start_pos + [-0.2, 0, 0.5],
+            # start_pos + [0, -0.5, 0.2]]
+  waypts = []
+
+  barriers = []
+  # barriers.append(('rect', {"dims": [0.12, 0.04, 0.14], "pos": [0.05, -0.40607215, 1.12]}))
+  # barriers.append(('sphere', {"rad": 0.05, "pos": [-0.08886439, -0.30607215, 1.1973825]}))
+  # barriers.append(('sphere', {"rad": 0.05, "pos": [-0.15, -0.35, 1.1973825]}))
+  # barriers.append(('sphere', {"rad": 0.05, "pos": [-0.15, -0.23, 1.1973825]}))
+  # barriers.append(('sphere', {"rad": 0.09, "pos": [0.12, 0.05, 1]})) # intersection before/after contact
+  # barriers.append(('rect', {"dims": [0.25, 0.04, 0.16], "pos": [-0.15, -0.45, 1.15]}))
+  
+
+
   # print(objectSplines)
 
 
-
-  objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, endPos = endWayPt, waypts = waypts,
-                                       floor_height = start_pos[2])
+  objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2])
                                       #  bounding_sphere_radius=boundary_radius,
                                       #  barriers=barriers)
 
   #generate_barrier('rect', {"dims": [0.05, 0.05, 0.05], "pos": [-0.08886439, -0.26607215, 1.2973825]}, path="/Users/hjp/desktop/repulsive-curves/scenes/retargeting/barrierRect.obj")
   #generate_barrier('sphere', {"rad": 0.05, "pos": [-0.08886439, -0.26607215, 1.2973825]}, path="/Users/hjp/desktop/repulsive-curves/scenes/retargeting/barrierSphere.obj")
   
-
-  frames = 702
 
   # calculate number of frames for each segment of the trajectory
   start_frame_count = int(frames * startTime)
@@ -190,7 +203,7 @@ if __name__ == "__main__":
   if not barrierWayptsCheck(barriers, waypts, boundary_radius):
     raise Exception("waypoints are closer to the barrier than the object radius")
 
-  barrierConstraints(objectSplines, boundary_radius, barriers = barriers, resolution = frames, endObj=endObj)
+  barrierConstraints(objectSplines, boundary_radius, barriers = barriers, resolution = frames)
   
 
   # ensure all points are above the surface
@@ -202,35 +215,6 @@ if __name__ == "__main__":
   trajectory = read_obj("scene/curve_positions.obj")
   retargeted_spline = create_smoothing_bspline(trajectory, parameterization="chord")
   
-  # (outdated, for repulsive curves) prevent motion before and after contact
-  # (outdated, for repulsive curves) NOTE: assumes that frames = resolution in barrierConstraints
-  # cleanTrajectory(start_pos[2], int(startTime*frames), int(endTime*frames), objectSplines[:3], frames)
-
-  m = mujoco.MjModel.from_xml_path('kitchen2.xml')
-  d = mujoco.MjData(m)
-  m.opt.timestep = 2*seconds/frames
-
-  sim_time = np.linspace(0, 1, frames)
-
-  qpos_spline_data = np.array([spline(sim_time) for spline in splines]) # (51, frames, 2)
-  object_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplines]) # (6, frames, 2)
-  object_orig_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplinesOrig]) # (6, frames, 2)
-
-  qpos_frames = qpos_spline_data[0, :, 0] # frames are same for all dof
-  qpos_spline_data = qpos_spline_data[:, :, 1] # (51, frames)
-
-  object_qpos_spline_data = object_qpos_spline_data[:, :, 1] # (6, frames)
-  object_orig_qpos_spline_data = object_orig_qpos_spline_data[:, :, 1] # (6, frames)
-
-  if AGENT == 'MANO_right' or AGENT == 'trajectories':
-    qpos = convert_to_quaternions_MANO(qpos_spline_data)
-  if AGENT == 'Allegro_right':
-    qpos = convert_to_quaternions_Allegro(qpos_spline_data)
-
-  object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
-  object_orig_qpos = convert_to_quaternions_object(object_orig_qpos_spline_data)  # without waypoint
-
-  # object_repul_pos = read_obj("scene/curve_positions.obj")
 
 
 
@@ -264,16 +248,7 @@ if __name__ == "__main__":
       spl = scipy.interpolate.make_interp_spline(x1, qpos_start[i, :], k=3)
       start_splines.append(spl)
 
-  # print(qpos.shape)
-  
-  # sq_distances = np.sum(( np.array( [ 0.04164962 ,-0.22759009 , 0.99819616]).reshape(3, 1) - qpos[:3, :])**2, axis=0)
-  # closest_idx = np.argmin(sq_distances)
-  # print(closest_idx, qpos[:3, closest_idx])
 
-
-  # sq_distances = np.sum(( np.array([ 0.2244669,  -0.58603104,  1.03235886]).reshape(3, 1)  - qpos[:3, :])**2, axis=0)
-  # closest_idx = np.argmin(sq_distances)
-  # print(closest_idx, qpos[:3, closest_idx])
   
   qpos_end = qpos[:3, -end_frame_count:]
   x2 = np.linspace(0, 1, end_frame_count)

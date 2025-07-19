@@ -17,7 +17,7 @@ from generateBinObj import *
 from smoothspline import *
 
 AGENT="trajectories"
-TASK="bowl_lift"
+TASK="fryingpan_cook"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -76,6 +76,28 @@ def convert_to_quaternions_object(qpos_spline_data):
   return qpos
 
 
+def rotate_keyframe_angles(keyframes, rotation):
+    """
+    Add rotation to existing orientations in keyframes
+    keyframes: (6, n_frames) array 
+    rotation: [rx, ry, rz] to add to existing rotations
+    """
+    keyframes_modified = keyframes.copy()
+    
+    additional_rot = R.from_euler('xyz', np.radians(rotation))
+    
+    for i in range(keyframes.shape[1]):
+        # Get existing rotation
+        existing_euler = keyframes[3:6, i]
+        existing_rot = R.from_euler('xyz', existing_euler)
+        
+        combined_rot = additional_rot * existing_rot
+        
+        # Convert back to euler and store
+        keyframes_modified[3:6, i] = combined_rot.as_euler('xyz')
+    
+    return keyframes_modified
+
 
 if __name__ == "__main__":
   build_env_xml(AGENT, TASK)
@@ -100,6 +122,10 @@ if __name__ == "__main__":
   qpos_spline_data = qpos_spline_data[:, :, 1] # (51, frames)
 
   object_qpos_spline_data = object_qpos_spline_data[:, :, 1] # (6, frames)
+
+  rotation = [0, 0, 146.441]
+  qpos_spline_data = rotate_keyframe_angles(qpos_spline_data, rotation)
+  object_qpos_spline_data = rotate_keyframe_angles(object_qpos_spline_data, rotation)
 
   if AGENT == 'MANO_right' or AGENT == 'trajectories':
     qpos = convert_to_quaternions_MANO(qpos_spline_data)
