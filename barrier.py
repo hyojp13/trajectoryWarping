@@ -4,6 +4,8 @@ from generate_barrier import *
 import copy
 import trimesh
 from scipy.spatial import KDTree
+import open3d as o3d
+import numpy as np
 
 # def optimizeCurve(api, scene_file, out_pos_file, out_tangent_file):
 #     return api.optimizeCurve(scene_file, out_pos_file, out_tangent_file)
@@ -220,6 +222,10 @@ def barrierConstraints(splines, object_radius, barriers, resolution, endObj=None
             generate_barrier(object_radius, barr_type, config, path=path)
         else:
             path = barrier
+            minkowski_sum_convex_ball(path, object_radius)
+
+
+        
 
         # create_obj(splines, traj_path[:-4] + "_dense.obj", resolution = 10000)
         intersectionCount = trajectoryBarrierIntersectionCount(traj_path, path)
@@ -311,20 +317,9 @@ def process_barriers(barriers):
             # mesh.apply_translation([-pos[0], pos[2], pos[1]])
             mesh.apply_translation(pos)
 
-
             # Save transformed mesh
             output_path = f"meshes/barrier_transformed_{i}.obj"
             mesh.export(output_path)
-
-            # Fix coord axes for consistency
-            T = np.array([
-                [-1,  0, 0, 0],  # -x
-                [ 0,  0, 1, 0],  # z -> y
-                [ 0,  1, 0, 0],  # y -> z
-                [ 0,  0, 0, 1]
-            ])
-
-            mesh.apply_transform(T)
             
             barriers_new.append(output_path)
         else:
@@ -354,5 +349,24 @@ def correct_barrier_axes(barriers):
 
             # Save transformed mesh
             mesh.export(barrier)
+
         barriers_new.append(barrier)
     return barriers_new
+
+
+# compute the convex hull then performs minkowski sum with a ball
+def minkowski_sum_convex_ball(mesh_path, radius):
+    mesh = trimesh.load(mesh_path)
+    mesh = mesh.convex_hull
+    mesh.export(mesh_path)
+
+    mesh = o3d.io.read_triangle_mesh(mesh_path)
+    
+    mesh.compute_vertex_normals()
+    vertices = np.asarray(mesh.vertices)
+    normals = np.asarray(mesh.vertex_normals)
+    
+    new_vertices = vertices + radius * normals
+    
+    mesh.vertices = o3d.utility.Vector3dVector(new_vertices)
+    o3d.io.write_triangle_mesh(mesh_path, mesh)

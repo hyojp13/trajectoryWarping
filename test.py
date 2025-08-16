@@ -116,7 +116,7 @@ if __name__ == "__main__":
     xml_string = f.read()
   
   barriers = []
-  barriers.append(("/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/hoods/pack_2/visuals/model_0.obj", {"scale":(1.15613, 1.06643, 1.15613), "pos":(2.2-0.15, -0.3, 2.24807-0.25)}))
+  barriers.append(("/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/hoods/pack_2/visuals/model_0.obj", {"scale":(1.15613, 1.06643, 1.15613), "pos":(2.2-0.15, -0.3, 2.24807-0.3)}))
   barriers.append(('rect', {"dims": [1, 0.4, 0.03], "pos": [3.2, -0.2, 1.85-0.445]}))
   barriers = process_barriers(barriers) # apply scale and pos to obj barriers
 
