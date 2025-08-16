@@ -142,7 +142,7 @@ def correctTrajectory(trajectoryFile, barrierFile):
                 new_point = point.copy()
                 
                 # move the point outward in small steps
-                step_size = 0.01 * surface.scale
+                step_size = 0.005 * surface.scale
                 # max_steps = 1000
                 steps = 0
                 
@@ -199,10 +199,12 @@ def barrierConstraints(splines, object_radius, barriers, resolution, endObj=None
     scene_file += 'fix_length\n'
 
 
-    for i, (barr_type, config) in enumerate(barriers):
-        name = 'barrier' + str(i) + '.obj'
-        path = "scene/" + name
-        scene_file += 'repel_surface ' + name + '\n'
+    for i, barrier in enumerate(barriers):
+        if not isinstance(barrier, str):
+            barr_type, config = barrier
+            name = 'barrier' + str(i) + '.obj'
+            path = "scene/" + name
+            scene_file += 'repel_surface ' + name + '\n'
 
     # scene_file += 'fix_length'
     f = open("scene/temp.txt", "w")
@@ -210,10 +212,14 @@ def barrierConstraints(splines, object_radius, barriers, resolution, endObj=None
     f.close()
 
 
-    for i, (barr_type, config) in enumerate(barriers):
-        name = 'barrier' + str(i) + '.obj'
-        path = "scene/" + name
-        generate_barrier(object_radius, barr_type, config, path=path)
+    for i, barrier in enumerate(barriers):
+        if not isinstance(barrier, str):
+            barr_type, config = barrier
+            name = 'barrier' + str(i) + '.obj'
+            path = "scene/" + name
+            generate_barrier(object_radius, barr_type, config, path=path)
+        else:
+            path = barrier
 
         # create_obj(splines, traj_path[:-4] + "_dense.obj", resolution = 10000)
         intersectionCount = trajectoryBarrierIntersectionCount(traj_path, path)
@@ -280,3 +286,73 @@ def cleanTrajectory(floor_height, startTime, endTime, objectSplines, resolution,
     obj[endTime:, 2] = spline_data[2, endTime:]
 
     save_obj(obj, traj_path)
+
+
+# takes in a list of barriers and if a barrier is an obj file with scale and pos,
+# create a new obj with those configurations
+# returns a list of obj files (its coord axes need to be fixed) and primitive barriers
+def process_barriers(barriers):
+    barriers_new = []
+    for i, barrier in enumerate(barriers):
+        b1, b2 = barrier
+        if b1 != 'rect' and b2 != 'sphere':
+            input_path = b1
+            scale = b2.get('scale', (1.0, 1.0, 1.0))
+            pos = b2.get('pos', (0.0, 0.0, 0.0))
+
+            # Load mesh
+            mesh = trimesh.load(input_path)
+
+            # Apply scaling
+            # mesh.apply_scale([-scale[0], scale[2], scale[1]])
+            mesh.apply_scale(scale)
+
+            # Apply translation
+            # mesh.apply_translation([-pos[0], pos[2], pos[1]])
+            mesh.apply_translation(pos)
+
+
+            # Save transformed mesh
+            output_path = f"meshes/barrier_transformed_{i}.obj"
+            mesh.export(output_path)
+
+            # Fix coord axes for consistency
+            T = np.array([
+                [-1,  0, 0, 0],  # -x
+                [ 0,  0, 1, 0],  # z -> y
+                [ 0,  1, 0, 0],  # y -> z
+                [ 0,  0, 0, 1]
+            ])
+
+            mesh.apply_transform(T)
+            
+            barriers_new.append(output_path)
+        else:
+            barriers_new.append(barrier)
+    return barriers_new
+
+
+# takes in a list of barriers and fixes the coord axes of non-primitive barriers
+# from xyz to -xzy
+def correct_barrier_axes(barriers):
+    barriers_new = []
+    for barrier in barriers:
+        if isinstance(barrier, str):
+            print("Fixing axes for " + barrier)
+            # Load mesh
+            mesh = trimesh.load(barrier)
+
+            # Fix coord axes for consistency
+            T = np.array([
+                [-1,  0, 0, 0],  # -x
+                [ 0,  0, 1, 0],  # z -> y
+                [ 0,  1, 0, 0],  # y -> z
+                [ 0,  0, 0, 1]
+            ])
+
+            mesh.apply_transform(T)
+
+            # Save transformed mesh
+            mesh.export(barrier)
+        barriers_new.append(barrier)
+    return barriers_new

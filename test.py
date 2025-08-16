@@ -110,10 +110,57 @@ if __name__ == "__main__":
 
   objectSplinesOrig, _, _ = parseSplines('startingTrajectories/' + AGENT + '/' + TASK + '/object.smexp')
 
+  # add mesh barriers to MuJoCo
+  scene_file = "kitchen2.xml"
+  with open(scene_file) as f:
+    xml_string = f.read()
+  
+  barriers = []
+  barriers.append(("/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/hoods/pack_2/visuals/model_0.obj", {"scale":(1.15613, 1.06643, 1.15613), "pos":(2.2-0.15, -0.3, 2.24807-0.25)}))
+  barriers.append(('rect', {"dims": [1, 0.4, 0.03], "pos": [3.2, -0.2, 1.85-0.445]}))
+  barriers = process_barriers(barriers) # apply scale and pos to obj barriers
+
+  for i, barrier in enumerate(barriers):
+    if isinstance(barrier, str):
+      # Path to your .obj file
+      mesh_file = barrier.split('/')[1]
+      import os
+      print(os.path.abspath(mesh_file))
+
+
+      mesh_asset = f"""
+          <mesh name="mesh_{i}" file="{mesh_file}"/>
+      """
+
+      mesh_body = f"""
+          <body name="mesh_body" pos="0 0 0">
+              <geom type="mesh" mesh="mesh_{i}" rgba="0.2 0.8 0.2 1" group="2"/>
+          </body>
+      """
+
+      if "</asset>" in xml_string:
+        xml_string = xml_string.replace("</asset>", mesh_asset + "\n</asset>")
+      else:
+          raise ValueError("No <asset> block found in XML.")
+
+      # Inject body into <worldbody> block (before </worldbody>)
+      if "</worldbody>" in xml_string:
+          xml_string = xml_string.replace("</worldbody>", mesh_body + "\n</worldbody>")
+      else:
+          raise ValueError("No <worldbody> block found in XML.")
+
+  # Load model from modified XML string
+  m = mujoco.MjModel.from_xml_string(xml_string)
+  d = mujoco.MjData(m)
+
+
+  # correct barrier axes (issue due to using repulsive curves previously)
+  barrier = correct_barrier_axes(barriers)
+
   # configurations
   frames = 1000
-  m = mujoco.MjModel.from_xml_path('kitchen2.xml')
-  d = mujoco.MjData(m)
+  # m = mujoco.MjModel.from_xml_path(scene_file)
+  # d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
   sim_time = np.linspace(0, 1, frames)
 
@@ -147,10 +194,10 @@ if __name__ == "__main__":
 
 
   boundary_radius = 0.1
-  hand_boundary_radius = 0.15
+  hand_boundary_radius = 0.1
 
   newStartPos = start_pos + ([-0.23, 0.18, 0])
-  endObjPos = end_pos + ([0.28, 0.18, 0])
+  endObjPos = end_pos + ([0.9, 0.18, 0.48])
 
   # generate desired end object
   # basket_mesh = create_basket(radius=0.1, height=0.16, wall_thickness=0.01)
@@ -165,7 +212,6 @@ if __name__ == "__main__":
             # start_pos + [0, -0.5, 0.2]]
   waypts = []
 
-  barriers = []
   # barriers.append(('rect', {"dims": [0.12, 0.04, 0.14], "pos": [0.05, -0.40607215, 1.12]}))
   # barriers.append(('sphere', {"rad": 0.05, "pos": [-0.08886439, -0.30607215, 1.1973825]}))
   # barriers.append(('sphere', {"rad": 0.05, "pos": [-0.15, -0.35, 1.1973825]}))
@@ -386,7 +432,9 @@ if __name__ == "__main__":
       # barrier
       if barriers is not None:
         for j in range(len(barriers)):
-          if barriers[j][0] == 'sphere':
+          if isinstance(barriers[j], str):
+            continue
+          elif barriers[j][0] == 'sphere':
             mujoco.mjv_initGeom(
                 viewer.user_scn.geoms[j + geometry_count],
                 type=mujoco.mjtGeom.mjGEOM_SPHERE,
