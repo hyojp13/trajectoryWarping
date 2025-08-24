@@ -197,7 +197,7 @@ if __name__ == "__main__":
   hand_boundary_radius = 0.1
 
   newStartPos = start_pos + ([-0.23, 0.18, 0])
-  endObjPos = end_pos + ([0.9, 0.18, 0.48])
+  endObjPos = end_pos + ([0.9, 0.18, 0.47])
 
   # generate desired end object
   # basket_mesh = create_basket(radius=0.1, height=0.16, wall_thickness=0.01)
@@ -258,7 +258,15 @@ if __name__ == "__main__":
   save_obj(obj, "scene/curve_positions.obj")
 
 
-  trajectory = read_obj("scene/curve_positions.obj")
+  trajectory = read_obj("scene/curve_positions.obj")  # (frames, 3)
+
+  # ensure trajectory ends in end position
+  if not np.isclose(trajectory[-1, :], endObjPos).all():
+    moveToEndPt("scene/curve_positions.obj", endObjPos, n=20)
+    trajectory = read_obj("scene/curve_positions.obj")
+
+
+
   retargeted_spline = create_smoothing_bspline(trajectory, parameterization="chord")
   
 
@@ -286,7 +294,7 @@ if __name__ == "__main__":
 
 
 
-  # # retarget hand before and after contact
+  # retarget hand before and after contact
   qpos_start = qpos[:3, :start_frame_count]
   x1 = np.linspace(0, 1, start_frame_count)
   start_splines = []

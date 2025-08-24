@@ -185,6 +185,24 @@ def enterEndObj(trajectoryFile, endObj, n=10):
     save_obj(np.vstack((trajectory, path)), trajectoryFile)
 
 
+# similar to enterEndObj(). Creates linear points from the last point
+# in the trajectory to endpt
+def moveToEndPt(trajectoryFile, endpt, n=10):
+    trajectory = read_obj(trajectoryFile)
+
+    startpt = trajectory[-1, :]
+
+    # endpt[0] *= -1
+    # temp = endpt[1]
+    # endpt[1] = endpt[2]
+    # endpt[2] = temp
+
+    t_values = np.linspace(1.0/n, 1.0, n)
+    path = np.array([startpt + t * (endpt - startpt) for t in t_values])
+
+    save_obj(np.vstack((trajectory, path)), trajectoryFile)
+
+
 
 def barrierConstraints(splines, object_radius, barriers, resolution, endObj=None, traj_path = "scene/curve_positions.obj"):
     create_obj(splines, traj_path, resolution = resolution)
