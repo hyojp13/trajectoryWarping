@@ -218,7 +218,7 @@ def trajectoryConstraints(splines, startPos=None, endPos=None, waypts=None, floo
     else:
         pos[:, endIdx:] = endPos.reshape(3, 1)
     
-    if waypts is None:
+    if waypts == [] or waypts is None:
         pos[:, startIdx:endIdx] = transformSplines(pos[:, startIdx:endIdx], startPos, endPos) 
         ctrlPtIdxs = None
     else:

@@ -276,20 +276,23 @@ def barrierWayptsCheck(barriers, waypts, object_radius):
             temp = waypt[2]
             waypt[2] = waypt[1]
             waypt[1] = temp
-            
-            for i, (barr_type, config) in enumerate(barriers):
-                name = 'barrier' + str(i) + '.obj'
-                path = "scene/" + name
-                generate_barrier(0, barr_type, config, path=path)
 
-                surface_mesh = trimesh.load_mesh(path)
+            for i, barrier in enumerate(barriers):
+                if not isinstance(barrier, str):
+                    barr_type, config = barrier
+                    
+                    name = 'barrier' + str(i) + '.obj'
+                    path = "scene/" + name
+                    generate_barrier(0, barr_type, config, path=path)
 
-                closest_point, distance, _ = surface_mesh.nearest.on_surface([waypt])
+                    surface_mesh = trimesh.load_mesh(path)
 
-                # print(i, closest_point, waypt, distance)
+                    closest_point, distance, _ = surface_mesh.nearest.on_surface([waypt])
 
-                if distance < object_radius*2 + 0.005:
-                    return False
+                    # print(i, closest_point, waypt, distance)
+
+                    if distance < object_radius*2 + 0.005:
+                        return False
     return True
 
 

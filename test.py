@@ -118,6 +118,9 @@ if __name__ == "__main__":
   barriers = []
   barriers.append(("/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/hoods/pack_2/visuals/model_0.obj", {"scale":(1.15613, 1.06643, 1.15613), "pos":(2.2-0.15, -0.3, 2.24807-0.3)}))
   barriers.append(('rect', {"dims": [1, 0.4, 0.03], "pos": [3.2, -0.2, 1.85-0.445]}))
+  barriers.append(('rect', {"dims": [0.03, 0.2, 0.15], "pos": [2.9
+                                                               , -0.2, 1.85-0.385]}))
+  barriers.append(('rect', {"dims": [0.03, 0.2, 0.15], "pos": [3.15, -0.2, 1.85-0.385]}))
   barriers = process_barriers(barriers) # apply scale and pos to obj barriers
 
   for i, barrier in enumerate(barriers):
@@ -197,7 +200,8 @@ if __name__ == "__main__":
   hand_boundary_radius = 0.1
 
   newStartPos = start_pos + ([-0.23, 0.18, 0])
-  endObjPos = end_pos + ([0.9, 0.18, 0.47])
+  endFinalPos = end_pos + ([0.85, 0.18, 0.47]) # Actual end destination
+  endObjPos = endFinalPos + ([0, 0, 0.2])  # Motion should end here, points from here to endFinalPos is linear interpolation
 
   # generate desired end object
   # basket_mesh = create_basket(radius=0.1, height=0.16, wall_thickness=0.01)
@@ -218,13 +222,10 @@ if __name__ == "__main__":
   # barriers.append(('sphere', {"rad": 0.05, "pos": [-0.15, -0.23, 1.1973825]}))
   # barriers.append(('sphere', {"rad": 0.09, "pos": [0.12, 0.05, 1]})) # intersection before/after contact
   # barriers.append(('rect', {"dims": [0.25, 0.04, 0.16], "pos": [-0.15, -0.45, 1.15]}))
-  
 
 
-  # print(objectSplines)
 
-
-  objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2])
+  objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
                                       #  bounding_sphere_radius=boundary_radius,
                                       #  barriers=barriers)
 
@@ -261,8 +262,8 @@ if __name__ == "__main__":
   trajectory = read_obj("scene/curve_positions.obj")  # (frames, 3)
 
   # ensure trajectory ends in end position
-  if not np.isclose(trajectory[-1, :], endObjPos).all():
-    moveToEndPt("scene/curve_positions.obj", endObjPos, n=20)
+  if not np.isclose(trajectory[-1, :], endFinalPos).all():
+    moveToEndPt("scene/curve_positions.obj", endFinalPos, n=20)
     trajectory = read_obj("scene/curve_positions.obj")
 
 
