@@ -29,14 +29,18 @@ def chord_length_parameterize(points):
         
     return t
 
-def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization="uniform"):
+
+# waypts must be provided with parameterization=='waypts'
+# waypts must be a list of (pos, t_start, t_final, count) where:
+# pos: position, t_start: time step in the original trajectory, t_final: time step in the final trajectory,
+# count: number of points since the last waypt
+def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization="uniform", waypts = None):
     if smoothing is None:
         smoothing = points.shape[0]
 
     # print("RUNNING:")
     # motionStartEnd(points)
     
-
     points = remove_duplicate_points(points)
     x, y, z = points.T
 
@@ -44,6 +48,19 @@ def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization=
         t = np.linspace(0, 1, len(points))
     elif parameterization == "chord":
         t = chord_length_parameterize(points)
+    elif parameterization == "waypts" and waypts != None:
+        t = np.zeros(len(points))
+
+        point_count = 0
+        prev_timestep = 0
+        for waypt in waypts:
+            t_section = chord_length_parameterize(points[point_count:point_count + waypt[3]])
+            t_section = t_section * (waypt[2] - prev_timestep) + waypt[2]
+
+            t[point_count:point_count + waypt[3]] = t_section
+            point_count += waypt[3]
+            prev_timestep = waypt[2]
+
     else:
         raise Exception("unavailable parameterization format")
     

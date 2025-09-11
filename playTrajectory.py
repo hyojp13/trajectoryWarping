@@ -17,7 +17,7 @@ from generateBinObj import *
 from smoothspline import *
 
 AGENT="trajectories"
-TASK="fryingpan_cook"
+TASK="fryingpan_cook_more_ctrlpts"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))

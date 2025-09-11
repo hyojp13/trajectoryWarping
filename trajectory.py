@@ -130,29 +130,50 @@ def transformSplines(coordinates, new_start, new_end):
 
 # determine when the object starts moving using a Gaussian mixture model
 def motionStartEnd(pos):
-    speed = np.linalg.norm(np.diff(pos, axis=1), axis = 0).reshape(-1, 1)
+    # speed = np.linalg.norm(np.diff(pos, axis=1), axis = 0).reshape(-1, 1)
 
-    gmm = GaussianMixture(n_components=2, random_state=0)
-    labels = gmm.fit_predict(speed)
+    # gmm = GaussianMixture(n_components=2)
+    # labels = gmm.fit_predict(speed)
 
-    cluster_means = [np.mean(speed[labels == label]) for label in [0, 1]]
-    rest_label = np.argmin(cluster_means)
-    motion_label = 1 - rest_label
+    # cluster_means = [np.mean(speed[labels == label]) for label in [0, 1]]
+    # print(cluster_means)
+    # rest_label = np.argmin(cluster_means)
+    # motion_label = 1 - rest_label
+
+    pos_count = pos.shape[1]
+    labels = np.zeros(pos_count)
+    rest_height = pos[2, 0]
+
+    # detect "moving" by height
+    for i in range(pos_count):
+        if abs(pos[2, i] - rest_height) > 0.01:
+            labels[i] = 1
 
     label_changes = np.where(np.diff(labels) != 0)[0] + 1
 
     start_index = None
     stop_index = None
 
+    minimum_consecutive = 0.05
+
+    c = math.ceil(pos_count * minimum_consecutive)
+    # minimum_consecutive percent of the points must be resting to determine idx
     for idx in label_changes:
-        if labels[idx - 1] == rest_label and labels[idx] == motion_label:
+        if idx < c or idx >= len(labels)-3:
+            continue
+        if labels[idx-c:idx].all() == 0 and labels[idx:idx+3].all() == 1:
             start_index = idx
             break
 
     for idx in label_changes[::-1]:
-        if labels[idx - 1] == motion_label and labels[idx] == rest_label:
+        if idx < 3 or idx >= len(labels)-c:
+            continue
+        if labels[idx-3:idx].all() == 1 and labels[idx:idx+c].all() == 0:
             stop_index = idx
             break
+
+    if start_index is None or stop_index is None:
+        raise RuntimeError("Unable to determine start and stop indices.")
 
     print("Motion start index: ", start_index)
     print("Motion end index: ", stop_index)
@@ -160,15 +181,28 @@ def motionStartEnd(pos):
     dist = np.sqrt(pos[0, :]**2 + pos[1, :]**2 + pos[2, :]**2)
 
     
-    # import matplotlib.pyplot as plt
-    # plt.figure(figsize=(10, 4))
-    # plt.plot(np.arange(len(pos[0, :])-1), speed, label='Speed', color='gray')
-    # plt.scatter(np.arange(len(pos[0, :])-1)[labels == 0], speed[labels == 0],
-    #             color='blue', label='Rest', alpha=0.6)
-    # plt.scatter(np.arange(len(pos[0, :])-1)[labels == 1], speed[labels == 1],
-    #             color='red', label='Motion', alpha=0.6)
-    # plt.xlabel('Time')
-    # plt.ylabel('Speed')
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(10, 4))
+    plt.plot(np.arange(len(pos[0, :])), pos[0, :], label='Pos', color='gray')
+    plt.scatter(np.arange(len(pos[0, :]))[labels == 0], pos[0, labels == 0],
+                color='blue', label='Rest', alpha=0.6)
+    plt.scatter(np.arange(len(pos[0, :]))[labels == 1], pos[0, labels == 1],
+                color='red', label='Motion', alpha=0.6)
+    
+    plt.plot(np.arange(len(pos[1, :])), pos[1, :], label='Pos', color='gray')
+    plt.scatter(np.arange(len(pos[1, :]))[labels == 0], pos[1, labels == 0],
+                color='blue', label='Rest', alpha=0.6)
+    plt.scatter(np.arange(len(pos[1, :]))[labels == 1], pos[1, labels == 1],
+                color='red', label='Motion', alpha=0.6)
+    
+    plt.plot(np.arange(len(pos[2, :])), pos[2, :], label='Pos', color='gray')
+    plt.scatter(np.arange(len(pos[2, :]))[labels == 0], pos[2, labels == 0],
+                color='blue', label='Rest', alpha=0.6)
+    plt.scatter(np.arange(len(pos[2, :]))[labels == 1], pos[2, labels == 1],
+                color='red', label='Motion', alpha=0.6)
+    
+    plt.xlabel('Time')
+    plt.ylabel('Pos')
     
 
     # plt.plot(np.arange(len(pos[0, :])), pos[2, :], label="z")
@@ -176,8 +210,9 @@ def motionStartEnd(pos):
     # plt.plot(np.arange(len(pos[0, :])), pos[0, :], label="x")
     # plt.plot(np.arange(len(pos[0, :])), dist, label="dist")
     # plt.plot(np.arange(len(pos[0, :])-1), speed, label="speed")
-    # plt.legend(loc="upper left")
+    plt.legend(loc="upper left")
     # plt.show()
+    plt.savefig('startEndGraph.png')
 
     return start_index, stop_index
 
@@ -194,13 +229,88 @@ def getSplineTime(splines, t):
     else:
         print("Root finding did not converge.")
 
+
+# pos : (3, points)
+# assumes pos is uniformly parameterized
+def trajectoryConstraintsPolyline(pos, startPos=None, endPos=None, waypts=None, floor_height=None):
+    pos_count = pos.shape[1]
+
+    startIdx, endIdx = motionStartEnd(pos)
+
+    if startPos is None:
+        startPos = pos[:, 0]
+    else:
+        pos[:, :startIdx] = startPos.reshape(3, 1)  # force points to startPos before hand contact
+    if endPos is None:
+        endPos = pos[:, pos_count-1]
+    else:
+        pos[:, endIdx:] = endPos.reshape(3, 1)  # force points to endPos after hand contact
+
+    if waypts == [] or waypts is None:
+        pos[:, startIdx:endIdx] = transformSplines(pos[:, startIdx:endIdx], startPos, endPos)
+    else:
+        waypts_count = len(waypts)
+        waypts_pos = np.zeros((waypts_count, 3)) # (n, 3)
+        waypts_timestep = np.zeros((waypts_count))
+        for i in range(waypts_count):
+            waypts_pos[i, :] = waypts[i][0]
+            waypts_timestep[i] = waypts[i][1]
+
+        # get point closest to each timestep
+        waypts_idx = np.zeros(waypts_count, dtype=int)
+
+        times = np.linspace(0, 1, pos_count)
+        
+        for j in range(waypts_count):
+            waypts_idx[j] = np.abs(times - waypts_timestep[j]).argmin()
+
+
+        print("startIdx, waypts_idx, endIdx: ", startIdx, waypts_idx, endIdx)
+
+        
+        # sort by way point idx
+        sort = waypts_idx.argsort()
+        waypts_idx = waypts_idx[sort].astype(int)
+        waypts_pos = waypts_pos[sort]
+
+        for i in range(len(waypts_idx)):
+            if waypts_idx[i] <= startIdx:
+                waypts_idx[i] = startIdx+1
+                print("WARNING: waypoint index squished to between start and end indices")
+            elif waypts_idx[i] >= endIdx:
+                waypts_idx[i] = endIdx-1
+                print("WARNING: waypoint index squished to between start and end indices")
+
+        # process segments
+        # ex: three segments for two waypoints
+        for i in range(waypts_count+1):
+            if i == 0:
+                # move polyline from 0 to waypts_idx to start to waypt
+                pos[:, startIdx:waypts_idx[i]+1] = transformSplines(pos[:, startIdx:waypts_idx[i]+1], startPos, waypts_pos[i]) 
+            elif i == waypts_count:
+                # move polyline from waypts_idx to end to waypt to end
+                pos[:, waypts_idx[i-1]:endIdx] = transformSplines(pos[:, waypts_idx[i-1]:endIdx], waypts_pos[i-1, :], endPos)
+            else:
+                pos[:, waypts_idx[i-1]:waypts_idx[i]+1] = transformSplines(pos[:, waypts_idx[i-1]:waypts_idx[i]+1], waypts_pos[i-1], waypts_pos[i])
+
+        for i in range(pos_count):
+            pos[2, i] = max(pos[2, i], floor_height)
+    
+    return pos, startIdx, endIdx
+
+                
+
+    
+
+
 def trajectoryConstraints(splines, startPos=None, endPos=None, waypts=None, floor_height=None, bounding_sphere_radius=None, barriers=None):
     # convert spline to ctrlPts
     pos_count = splines[0].c.shape[0]
     x_pos = np.array([splines[0].c[i, 1] for i in range(pos_count)])
     y_pos = np.array([splines[1].c[i, 1] for i in range(pos_count)])
     z_pos = np.array([splines[2].c[i, 1] for i in range(pos_count)])
-    times = np.array([splines[0].c[i, 0] for i in range(pos_count)])
+    times = np.array([splines[0].c[i, 0] for i in range(pos_count)]) # shape: (pos_count,)
+    times /= np.max(times)
     pos = np.zeros((3, pos_count))
     pos[0, :] = x_pos
     pos[1, :] = y_pos
@@ -222,38 +332,54 @@ def trajectoryConstraints(splines, startPos=None, endPos=None, waypts=None, floo
         pos[:, startIdx:endIdx] = transformSplines(pos[:, startIdx:endIdx], startPos, endPos) 
         ctrlPtIdxs = None
     else:
-        waypts = np.array(waypts)   # (n, 3)
+        waypts_count = len(waypts)
+        waypts_pos = np.zeros((waypts_count, 3)) # (n, 3)
+        waypts_timestep = np.zeros((waypts_count))
+        for i in range(waypts_count):
+            waypts_pos[i, :] = waypts[i][0]
+            waypts_timestep[i] = waypts[i][1]
 
         # get control point index closest to each waypoint
-        ctrlPtIdxs = np.zeros(len(waypts))
-        for j in range(len(waypts)):
-            dist = np.zeros(pos_count)
-            for i in range(pos_count):
-                dist[i] = np.linalg.norm(pos[:, i] - waypts[j])
-            ctrlPtIdxs[j] = np.argmin(dist)
+        # ctrlPtIdxs = np.zeros(len(waypts))
+        # for j in range(len(waypts)):
+        #     dist = np.zeros(pos_count)
+        #     for i in range(pos_count):
+        #         dist[i] = np.linalg.norm(pos[:, i] - waypts[j])
+        #     ctrlPtIdxs[j] = np.argmin(dist)
+
+        # get control point closest to each timestep
+        # TODO: use interpolated spline value instead
+        ctrlPtIdxs = np.zeros(waypts_count, dtype=int)
+        for j in range(waypts_count):
+            ctrlPtIdxs[j] = np.abs(times - waypts_timestep[j]).argmin()
+            # print(ctrlPtIdxs[j])
+            # print(waypts_timestep[j], times[ctrlPtIdxs[j]])
+
+        print("startIdx, ctrlPtIds, endIdx: ", startIdx, ctrlPtIdxs, endIdx)
 
         # sort by control point idx
         sort = ctrlPtIdxs.argsort()
         ctrlPtIdxs = ctrlPtIdxs[sort].astype(int)
-        waypts = waypts[sort]
+        waypts_pos = waypts_pos[sort]
 
         for i in range(len(ctrlPtIdxs)):
-            ctrlPtIdxs[i] = max(ctrlPtIdxs[i], startIdx)
-            ctrlPtIdxs[i] = min(ctrlPtIdxs[i]-1, endIdx)
+            ctrlPtIdxs[i] = max(ctrlPtIdxs[i], startIdx+1)
+            ctrlPtIdxs[i] = min(ctrlPtIdxs[i]-1, endIdx-1)
+            print("WARNING: ctrlPt index squished to between start and end indices")
 
         # ex: three segments for two waypoints
-        for i in range(len(waypts)+1):
+        for i in range(waypts_count+1):
             if i == 0:
                 # move splines from 0 to ctrlPtIdx to start to waypt
-                pos[:, startIdx:ctrlPtIdxs[i]+1] = transformSplines(pos[:, startIdx:ctrlPtIdxs[i]+1], startPos, waypts[i]) 
-            elif i == len(waypts):
+                pos[:, startIdx:ctrlPtIdxs[i]+1] = transformSplines(pos[:, startIdx:ctrlPtIdxs[i]+1], startPos, waypts_pos[i]) 
+            elif i == waypts_count:
                 # move splines from ctrlPtIdx to end to waypt to end
-                pos[:, ctrlPtIdxs[i-1]:endIdx] = transformSplines(pos[:, ctrlPtIdxs[i-1]:endIdx], waypts[i-1, :], endPos)
+                pos[:, ctrlPtIdxs[i-1]:endIdx] = transformSplines(pos[:, ctrlPtIdxs[i-1]:endIdx], waypts_pos[i-1, :], endPos)
             else:
-                pos[:, ctrlPtIdxs[i-1]:ctrlPtIdxs[i]+1] = transformSplines(pos[:, ctrlPtIdxs[i-1]:ctrlPtIdxs[i]+1], waypts[i-1], waypts[i])
+                pos[:, ctrlPtIdxs[i-1]:ctrlPtIdxs[i]+1] = transformSplines(pos[:, ctrlPtIdxs[i-1]:ctrlPtIdxs[i]+1], waypts_pos[i-1], waypts_pos[i])
 
 
-        # convert to initiail Bspline
+        # convert to initial Bspline
         for i in range(pos_count):
             splines[0].c[i, 1] = pos[0, i]
             splines[1].c[i, 1] = pos[1, i]
@@ -312,11 +438,11 @@ def trajectoryConstraints(splines, startPos=None, endPos=None, waypts=None, floo
                 splines[2].c[i, 1] = control_points[2, i]
             
             dist = np.zeros(3)
-            for i in range(len(waypts)):
+            for i in range(waypts_count):
                 t = getSplineTime(splines, splines[0].c[ctrlPtIdxs[i], 0])
-                dist[0] += abs(splines[0](t)[1] - waypts[i,0])
-                dist[1] += abs(splines[1](t)[1] - waypts[i,1])
-                dist[2] += abs(splines[2](t)[1] - waypts[i,2])
+                dist[0] += abs(splines[0](t)[1] - waypts_pos[i,0])
+                dist[1] += abs(splines[1](t)[1] - waypts_pos[i,1])
+                dist[2] += abs(splines[2](t)[1] - waypts_pos[i,2])
 
                 
             #barrier = energy(torch.tensor(control_points), bounding_sphere_radius, barriers).detach().numpy()

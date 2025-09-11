@@ -214,7 +214,8 @@ if __name__ == "__main__":
   # endObj = 'scene/basket.obj'
   # waypts = [start_pos + [-0.2, 0, 0.5],
             # start_pos + [0, -0.5, 0.2]]
-  waypts = []
+  waypts = [(newStartPos + ([0.0, 0, 0.0]), 0.65, 0.2)]
+  # waypts = []
 
   # barriers.append(('rect', {"dims": [0.12, 0.04, 0.14], "pos": [0.05, -0.40607215, 1.12]}))
   # barriers.append(('sphere', {"rad": 0.05, "pos": [-0.08886439, -0.30607215, 1.1973825]}))
@@ -223,9 +224,9 @@ if __name__ == "__main__":
   # barriers.append(('sphere', {"rad": 0.09, "pos": [0.12, 0.05, 1]})) # intersection before/after contact
   # barriers.append(('rect', {"dims": [0.25, 0.04, 0.16], "pos": [-0.15, -0.45, 1.15]}))
 
+  pos_waypt_constrained, startIdx, endIdx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
 
-
-  objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
+  # objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
                                       #  bounding_sphere_radius=boundary_radius,
                                       #  barriers=barriers)
 
@@ -234,8 +235,10 @@ if __name__ == "__main__":
   
 
   # calculate number of frames for each segment of the trajectory
-  start_frame_count = int(frames * startTime)
-  contact_frame_count = int(frames * (endTime - startTime))
+  # start_frame_count = int(frames * startTime)
+  # contact_frame_count = int(frames * (endTime - startTime))
+  start_frame_count = startIdx
+  contact_frame_count = endIdx-startIdx
   end_frame_count = frames - start_frame_count - contact_frame_count
 
   print("Frames before contact:", start_frame_count)
@@ -250,7 +253,7 @@ if __name__ == "__main__":
   if not barrierWayptsCheck(barriers, waypts, boundary_radius):
     raise Exception("waypoints are closer to the barrier than the object radius")
 
-  barrierConstraints(objectSplines, boundary_radius, barriers = barriers, resolution = frames)
+  barrierConstraints(pos_waypt_constrained.T, boundary_radius, barriers)
   
 
   # ensure all points are above the surface
@@ -266,9 +269,9 @@ if __name__ == "__main__":
     moveToEndPt("scene/curve_positions.obj", endFinalPos, n=20)
     trajectory = read_obj("scene/curve_positions.obj")
 
-
-
   retargeted_spline = create_smoothing_bspline(trajectory, parameterization="chord")
+
+  # retargeted_spline = create_smoothing_bspline(trajectory, parameterization="waypts", waypts = )
   
 
 
@@ -287,6 +290,8 @@ if __name__ == "__main__":
   retargeted_spline_pos = np.vstack((retargeted_start_pos, retargeted_spline_pos, retargeted_end_pos))
 
   object_shift = retargeted_spline_pos.T - object_orig_qpos[:3, :] # (3, frames)
+
+  # shift hand
   qpos[:3, :] += object_shift
 
   save_obj(retargeted_spline_pos, "scene/curve_positions.obj")
@@ -297,26 +302,24 @@ if __name__ == "__main__":
 
   # retarget hand before and after contact
   qpos_start = qpos[:3, :start_frame_count]
-  x1 = np.linspace(0, 1, start_frame_count)
-  start_splines = []
-  for i in range(3):
-      spl = scipy.interpolate.make_interp_spline(x1, qpos_start[i, :], k=3)
-      start_splines.append(spl)
-
+  # x1 = np.linspace(0, 1, start_frame_count)
+  # start_splines = []
+  # for i in range(3):
+  #     spl = scipy.interpolate.make_interp_spline(x1, qpos_start[i, :], k=3)
+  #     start_splines.append(spl)
 
   
   qpos_end = qpos[:3, -end_frame_count:]
-  x2 = np.linspace(0, 1, end_frame_count)
-  end_splines = []
-  for i in range(3):
-      spl = scipy.interpolate.make_interp_spline(x2, qpos_end[i, :], k=3)
-      end_splines.append(spl)
+  # x2 = np.linspace(0, 1, end_frame_count)
+  # end_splines = []
+  # for i in range(3):
+  #     spl = scipy.interpolate.make_interp_spline(x2, qpos_end[i, :], k=3)
+  #     end_splines.append(spl)
 
   # print(qpos_end)
 
   # retarget hand before contact
-  barrierConstraints(start_splines, hand_boundary_radius, barriers = barriers,
-                    resolution = start_frame_count, traj_path = "scene/hand_start_positions.obj")
+  barrierConstraints(qpos_start.T, hand_boundary_radius, barriers = barriers, traj_path = "scene/hand_start_positions.obj")
   
   # ensure all points are above the surface
   obj = read_obj("scene/hand_start_positions.obj")
@@ -331,8 +334,7 @@ if __name__ == "__main__":
 
 
   # retarget hand after contact
-  barrierConstraints(end_splines, hand_boundary_radius, barriers = barriers,
-                    resolution = end_frame_count, traj_path = "scene/hand_end_positions.obj")
+  barrierConstraints(qpos_end.T, hand_boundary_radius, barriers = barriers, traj_path = "scene/hand_end_positions.obj")
   
   # ensure all points are above the surface
   obj = read_obj("scene/hand_end_positions.obj")
@@ -488,7 +490,7 @@ if __name__ == "__main__":
               viewer.user_scn.geoms[geometry_count + j],
               type=mujoco.mjtGeom.mjGEOM_SPHERE,
               size=[0.01, 0, 0],
-              pos=waypts[j],
+              pos=waypts[j][0],
               mat=np.eye(3).flatten(),
               rgba=np.array([0, 0, 0, 1]))
         geometry_count += len(waypts)

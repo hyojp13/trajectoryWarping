@@ -71,7 +71,7 @@ def get_wayPointIdx(waypts, pos):
     idxs = []
 
     for waypt in waypts:
-        squared_distances = np.sum((pos - waypt) ** 2, axis=1)
+        squared_distances = np.sum((pos - waypt[0]) ** 2, axis=1)
     
         idxs.append(np.argmin(squared_distances))
     
@@ -204,9 +204,9 @@ def moveToEndPt(trajectoryFile, endpt, n=10):
 
 
 
-def barrierConstraints(splines, object_radius, barriers, resolution, endObj=None, traj_path = "scene/curve_positions.obj"):
-    create_obj(splines, traj_path, resolution = resolution)
-    create_obj(splines, traj_path[:-4] + "temp.obj", resolution = resolution)
+def barrierConstraints(pts, object_radius, barriers, endObj=None, traj_path = "scene/curve_positions.obj"):
+    save_obj(pts, traj_path)
+    save_obj(pts, traj_path[:-4] + "temp.obj")
 
     # if traj_path == "scene/hand_end_positions.obj":
         # return
@@ -269,7 +269,7 @@ def barrierConstraints(splines, object_radius, barriers, resolution, endObj=None
 def barrierWayptsCheck(barriers, waypts, object_radius):
     if waypts is not None:
         for waypt in waypts:
-            waypt = np.array(waypt)
+            waypt = np.array(waypt[0])
 
             # fix orientation
             waypt[0] *= -1
@@ -280,7 +280,7 @@ def barrierWayptsCheck(barriers, waypts, object_radius):
             for i, barrier in enumerate(barriers):
                 if not isinstance(barrier, str):
                     barr_type, config = barrier
-                    
+
                     name = 'barrier' + str(i) + '.obj'
                     path = "scene/" + name
                     generate_barrier(0, barr_type, config, path=path)
