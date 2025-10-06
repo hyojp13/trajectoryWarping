@@ -2,21 +2,37 @@ import numpy as np
 import scipy
 from trajectory import motionStartEnd
 
-def remove_duplicate_points(points):
-    diff = np.diff(points, axis=0)
+def remove_duplicate_points(points, waypts_idx=None):
+    # points : (n, 7)
+    p = points[:, :3]
+    diff = np.diff(p, axis=0)
 
     squared_distances = np.sum(diff**2, axis=1)
-    
-    keep_mask = np.zeros(len(points), dtype=bool)
-    keep_mask[0] = 1    # keep first point
-    
+
+    keep_mask = np.zeros(len(p), dtype=bool)
+    keep_mask[0] = 1  # keep first point
+
     duplicate_mask = squared_distances != 0
     keep_mask[1:] = duplicate_mask
 
+    if waypts_idx is not None:
+        # map old idx -> new idx of nearest surviving duplicate
+        old_to_new = np.full(len(p), -1, dtype=int)
+        new_idx = -1
+        for old_idx, keep in enumerate(keep_mask):
+            if keep:
+                new_idx += 1
+            old_to_new[old_idx] = new_idx
+
+        new_waypts_idx = np.array([old_to_new[idx] for idx in waypts_idx], dtype=int)
+
+        return points[keep_mask], new_waypts_idx
+    
     return points[keep_mask]
 
-
 def chord_length_parameterize(points):
+    # points : (n, 7)
+    points = points[:, :3]
     diffs = np.diff(points, axis=0)
     distances = np.sqrt(np.sum(diffs**2, axis=1))
     
@@ -30,46 +46,70 @@ def chord_length_parameterize(points):
     return t
 
 
-# waypts must be provided with parameterization=='waypts'
-# waypts must be a list of (pos, t_start, t_final, count) where:
-# pos: position, t_start: time step in the original trajectory, t_final: time step in the final trajectory,
-# count: number of points since the last waypt
-def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization="uniform", waypts = None):
+# waypts_info must be a tuple (waypts_idx, final_waypt_timesteps) where:
+# waypts_idx: frame where the waypoint currently lies
+# final_waypt_timesteps: at what percent of the final trajectory the waypoint should end
+def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization="uniform", waypts_info = None):
     if smoothing is None:
         smoothing = points.shape[0]
 
     # print("RUNNING:")
     # motionStartEnd(points)
     
-    points = remove_duplicate_points(points)
-    x, y, z = points.T
 
     if parameterization == "uniform":
+        points = remove_duplicate_points(points)    # (n, 7)
         t = np.linspace(0, 1, len(points))
     elif parameterization == "chord":
+        points = remove_duplicate_points(points)    # (n, 7)
         t = chord_length_parameterize(points)
-    elif parameterization == "waypts" and waypts != None:
-        t = np.zeros(len(points))
+    elif parameterization == "waypts":
+        if waypts_info == None:
+            points = remove_duplicate_points(points)    # (n, 7)
+            t = chord_length_parameterize(points)
+        else:
+            assert(len(waypts_info) == 2)
+            waypts_idx, final_waypt_timesteps = waypts_info
 
-        point_count = 0
-        prev_timestep = 0
-        for waypt in waypts:
-            t_section = chord_length_parameterize(points[point_count:point_count + waypt[3]])
-            t_section = t_section * (waypt[2] - prev_timestep) + waypt[2]
+            points, waypts_idx = remove_duplicate_points(points, waypts_idx)    # (n, 7)
 
-            t[point_count:point_count + waypt[3]] = t_section
-            point_count += waypt[3]
-            prev_timestep = waypt[2]
+            # add ending point
+            waypts_idx = np.append(waypts_idx, len(points))
+            final_waypt_timesteps = np.append(final_waypt_timesteps, 1.0)
+
+            t = np.zeros(len(points))
+
+            prev_timestep = 0
+            for i in range(waypts_idx.shape[0]):
+                # each segment: (prev_idx:idx)
+                start_idx = 0
+                if i != 0:
+                    start_idx = waypts_idx[i-1]
+                    
+                end_idx = waypts_idx[i]
+
+                eps = 0.001
+                t_section = chord_length_parameterize(points[start_idx:end_idx])
+                t_section = t_section * (final_waypt_timesteps[i] - prev_timestep - eps) + prev_timestep
+
+                print(start_idx, end_idx, t_section[:10], t_section[-10:], final_waypt_timesteps[i], prev_timestep)
+
+                t[start_idx:end_idx] = t_section
+                prev_timestep = final_waypt_timesteps[i]
+
 
     else:
         raise Exception("unavailable parameterization format")
     
 
-    spline, u = scipy.interpolate.splprep([x, y, z], u=t, s=0.001, k=degree)
-    # u = parameterization
+    points_list = [*points.T]
+    
+    # print(np.split(points, points.shape[0])[0].shape)
+    # print(np.split(points, points.shape[0]))
+    spline, u = scipy.interpolate.splprep(points_list, u=t, s=0.001, k=degree)
 
-    t, c, k = spline
+    # t, c, k = spline
 
-    splines = [scipy.interpolate.BSpline(t, c[i], k) for i in range(3)]
+    # splines = [scipy.interpolate.BSpline(t, c[i], k) for i in range(3)]
     
     return spline

@@ -183,7 +183,7 @@ if __name__ == "__main__":
             size=[0.005, 0, 0],
             pos=np.array(obj_frame_pts[j]),
             mat=np.eye(3).flatten(),
-            rgba=np.array([0.5, j % frames / frames, 1, 1])
+            rgba=np.array([0, 0 if j % frames / frames < 0.72 else 1, 1, 1])
         )
       geometry_count += len(obj_frame_pts)
       

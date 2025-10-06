@@ -88,21 +88,21 @@ def transformSplines(coordinates, new_start, new_end):
 
 
     # determine when hand moves object
-    start_frame = 0
-    for i in range(0, coordinates.shape[1]):
-        #print(np.linalg.norm(coordinates[:, 0] - coordinates[:, i]))
-        if np.linalg.norm(coordinates[:, 0] - coordinates[:, i]) < 0.01:
-            start_frame += 1
-        else:
-            break
+    # start_frame = 0
+    # for i in range(0, coordinates.shape[1]):
+    #     #print(np.linalg.norm(coordinates[:, 0] - coordinates[:, i]))
+    #     if np.linalg.norm(coordinates[:, 0] - coordinates[:, i]) < 0.01:
+    #         start_frame += 1
+    #     else:
+    #         break
 
-    # determine when hand stops moving object
-    end_frame = start_frame + 1
-    for i in range(end_frame, coordinates.shape[1]):
-        if np.linalg.norm(coordinates[:, coordinates.shape[1]-1] - coordinates[:, i]) > 0.02:
-            end_frame += 1
-        else:
-            break
+    # # determine when hand stops moving object
+    # end_frame = start_frame + 1
+    # for i in range(end_frame, coordinates.shape[1]):
+    #     if np.linalg.norm(coordinates[:, coordinates.shape[1]-1] - coordinates[:, i]) > 0.02:
+    #         end_frame += 1
+    #     else:
+    #         break
 
     #print(start_frame, end_frame)
     start_frame = 0
@@ -110,14 +110,16 @@ def transformSplines(coordinates, new_start, new_end):
 
 
     # shift frames before start_frame
-    for i in range(0, start_frame):
-        coordinates[:, i] += start_shift
+    # for i in range(0, start_frame):
+    #     coordinates[:, i] += start_shift
 
     # shift frames after end_frame
-    for i in range(end_frame, coordinates.shape[1]):
-        coordinates[:, i] += end_shift
+    # for i in range(end_frame, coordinates.shape[1]):
+    #     coordinates[:, i] += end_shift
 
     # shift frames between start and end frames by object_shift * weight
+    # print("start/end:", start_frame, end_frame)
+    # print("start/end pos:", coordinates[:, 0], coordinates[:, -1])
     for i in range(start_frame, end_frame):
         weight = (1 - (i - start_frame) / (end_frame - start_frame))**2
         coordinates[:, i] += weight * start_shift
@@ -181,28 +183,28 @@ def motionStartEnd(pos):
     dist = np.sqrt(pos[0, :]**2 + pos[1, :]**2 + pos[2, :]**2)
 
     
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(10, 4))
-    plt.plot(np.arange(len(pos[0, :])), pos[0, :], label='Pos', color='gray')
-    plt.scatter(np.arange(len(pos[0, :]))[labels == 0], pos[0, labels == 0],
-                color='blue', label='Rest', alpha=0.6)
-    plt.scatter(np.arange(len(pos[0, :]))[labels == 1], pos[0, labels == 1],
-                color='red', label='Motion', alpha=0.6)
+    # import matplotlib.pyplot as plt
+    # plt.figure(figsize=(10, 4))
+    # plt.plot(np.arange(len(pos[0, :])), pos[0, :], label='Pos', color='gray')
+    # plt.scatter(np.arange(len(pos[0, :]))[labels == 0], pos[0, labels == 0],
+    #             color='blue', label='Rest', alpha=0.6)
+    # plt.scatter(np.arange(len(pos[0, :]))[labels == 1], pos[0, labels == 1],
+    #             color='red', label='Motion', alpha=0.6)
     
-    plt.plot(np.arange(len(pos[1, :])), pos[1, :], label='Pos', color='gray')
-    plt.scatter(np.arange(len(pos[1, :]))[labels == 0], pos[1, labels == 0],
-                color='blue', label='Rest', alpha=0.6)
-    plt.scatter(np.arange(len(pos[1, :]))[labels == 1], pos[1, labels == 1],
-                color='red', label='Motion', alpha=0.6)
+    # plt.plot(np.arange(len(pos[1, :])), pos[1, :], label='Pos', color='gray')
+    # plt.scatter(np.arange(len(pos[1, :]))[labels == 0], pos[1, labels == 0],
+    #             color='blue', label='Rest', alpha=0.6)
+    # plt.scatter(np.arange(len(pos[1, :]))[labels == 1], pos[1, labels == 1],
+    #             color='red', label='Motion', alpha=0.6)
     
-    plt.plot(np.arange(len(pos[2, :])), pos[2, :], label='Pos', color='gray')
-    plt.scatter(np.arange(len(pos[2, :]))[labels == 0], pos[2, labels == 0],
-                color='blue', label='Rest', alpha=0.6)
-    plt.scatter(np.arange(len(pos[2, :]))[labels == 1], pos[2, labels == 1],
-                color='red', label='Motion', alpha=0.6)
+    # plt.plot(np.arange(len(pos[2, :])), pos[2, :], label='Pos', color='gray')
+    # plt.scatter(np.arange(len(pos[2, :]))[labels == 0], pos[2, labels == 0],
+    #             color='blue', label='Rest', alpha=0.6)
+    # plt.scatter(np.arange(len(pos[2, :]))[labels == 1], pos[2, labels == 1],
+    #             color='red', label='Motion', alpha=0.6)
     
-    plt.xlabel('Time')
-    plt.ylabel('Pos')
+    # plt.xlabel('Time')
+    # plt.ylabel('Pos')
     
 
     # plt.plot(np.arange(len(pos[0, :])), pos[2, :], label="z")
@@ -210,9 +212,9 @@ def motionStartEnd(pos):
     # plt.plot(np.arange(len(pos[0, :])), pos[0, :], label="x")
     # plt.plot(np.arange(len(pos[0, :])), dist, label="dist")
     # plt.plot(np.arange(len(pos[0, :])-1), speed, label="speed")
-    plt.legend(loc="upper left")
+    # plt.legend(loc="upper left")
     # plt.show()
-    plt.savefig('startEndGraph.png')
+    # plt.savefig('startEndGraph.png')
 
     return start_index, stop_index
 
@@ -236,6 +238,7 @@ def trajectoryConstraintsPolyline(pos, startPos=None, endPos=None, waypts=None, 
     pos_count = pos.shape[1]
 
     startIdx, endIdx = motionStartEnd(pos)
+    waypts_idx = None
 
     if startPos is None:
         startPos = pos[:, 0]
@@ -285,18 +288,21 @@ def trajectoryConstraintsPolyline(pos, startPos=None, endPos=None, waypts=None, 
         # ex: three segments for two waypoints
         for i in range(waypts_count+1):
             if i == 0:
+                print("i == 0:", startIdx, waypts_idx[i]+1)
                 # move polyline from 0 to waypts_idx to start to waypt
-                pos[:, startIdx:waypts_idx[i]+1] = transformSplines(pos[:, startIdx:waypts_idx[i]+1], startPos, waypts_pos[i]) 
+                pos[:, startIdx:waypts_idx[i]] = transformSplines(pos[:, startIdx:waypts_idx[i]], startPos, waypts_pos[i]) 
             elif i == waypts_count:
+                print("i == waypts_count:", waypts_idx[i-1], endIdx)
                 # move polyline from waypts_idx to end to waypt to end
                 pos[:, waypts_idx[i-1]:endIdx] = transformSplines(pos[:, waypts_idx[i-1]:endIdx], waypts_pos[i-1, :], endPos)
             else:
-                pos[:, waypts_idx[i-1]:waypts_idx[i]+1] = transformSplines(pos[:, waypts_idx[i-1]:waypts_idx[i]+1], waypts_pos[i-1], waypts_pos[i])
+                print("else i:", waypts_idx[i-1], endIdx)
+                pos[:, waypts_idx[i-1]:waypts_idx[i]] = transformSplines(pos[:, waypts_idx[i-1]:waypts_idx[i]], waypts_pos[i-1], waypts_pos[i])
 
         for i in range(pos_count):
             pos[2, i] = max(pos[2, i], floor_height)
     
-    return pos, startIdx, endIdx
+    return pos, startIdx, endIdx, waypts_idx
 
                 
 

@@ -214,7 +214,7 @@ if __name__ == "__main__":
   # endObj = 'scene/basket.obj'
   # waypts = [start_pos + [-0.2, 0, 0.5],
             # start_pos + [0, -0.5, 0.2]]
-  waypts = [(newStartPos + ([0.0, 0, 0.0]), 0.65, 0.2)]
+  waypts = [(newStartPos + ([-0.2, 0, 0.0]), 0.6, 0.2)]
   # waypts = []
 
   # barriers.append(('rect', {"dims": [0.12, 0.04, 0.14], "pos": [0.05, -0.40607215, 1.12]}))
@@ -224,15 +224,14 @@ if __name__ == "__main__":
   # barriers.append(('sphere', {"rad": 0.09, "pos": [0.12, 0.05, 1]})) # intersection before/after contact
   # barriers.append(('rect', {"dims": [0.25, 0.04, 0.16], "pos": [-0.15, -0.45, 1.15]}))
 
-  pos_waypt_constrained, startIdx, endIdx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
+  pos_waypt_constrained, startIdx, endIdx, waypts_idx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
 
   # objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
                                       #  bounding_sphere_radius=boundary_radius,
                                       #  barriers=barriers)
-
+  
   #generate_barrier('rect', {"dims": [0.05, 0.05, 0.05], "pos": [-0.08886439, -0.26607215, 1.2973825]}, path="/Users/hjp/desktop/repulsive-curves/scenes/retargeting/barrierRect.obj")
   #generate_barrier('sphere', {"rad": 0.05, "pos": [-0.08886439, -0.26607215, 1.2973825]}, path="/Users/hjp/desktop/repulsive-curves/scenes/retargeting/barrierSphere.obj")
-  
 
   # calculate number of frames for each segment of the trajectory
   # start_frame_count = int(frames * startTime)
@@ -265,19 +264,35 @@ if __name__ == "__main__":
   trajectory = read_obj("scene/curve_positions.obj")  # (frames, 3)
 
   # ensure trajectory ends in end position
+  extra_pt_count = 0
   if not np.isclose(trajectory[-1, :], endFinalPos).all():
-    moveToEndPt("scene/curve_positions.obj", endFinalPos, n=20)
+    extra_pt_count = 20
+    moveToEndPt("scene/curve_positions.obj", endFinalPos, n=extra_pt_count)
     trajectory = read_obj("scene/curve_positions.obj")
-
-  retargeted_spline = create_smoothing_bspline(trajectory, parameterization="chord")
-
-  # retargeted_spline = create_smoothing_bspline(trajectory, parameterization="waypts", waypts = )
   
+  # print(trajectory.shape)
+
+  # object_qpos[:3, :] = trajectory
+
+  new_object_qpos = np.zeros((object_qpos.shape[0], object_qpos.shape[1] + extra_pt_count))
+  new_object_qpos[:3, :] = trajectory.T
+  new_object_qpos[3:, :object_qpos.shape[1]] = object_qpos[3:, :]
+  new_object_qpos[3:, object_qpos.shape[1]:] = new_object_qpos[3:, object_qpos.shape[1]].reshape(object_qpos.shape[0]-3, 1)
+
+  # print(new_object_qpos.shape)  # (7, n+extra)
+
+  # assert new_object_qpos[:3, waypts_idx[i]]) is close to waypts_idx[i] for all i
+
+  final_waypt_timesteps = np.array([w[2] for w in waypts])  # (waypts, )
+  
+  retargeted_spline = create_smoothing_bspline(new_object_qpos.T, parameterization="waypts", waypts_info=(waypts_idx, final_waypt_timesteps))
 
 
 
   retargeted_sim_time = np.linspace(0, 1, contact_frame_count)
   retargeted_spline_pos = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_spline)).T
+
+  # print(retargeted_spline_pos.shape, contact_frame_count)
 
   # add points for the position before and after contact
   retargeted_start_pos = retargeted_spline_pos[0, :].reshape(1, -1)
@@ -289,12 +304,14 @@ if __name__ == "__main__":
 
   retargeted_spline_pos = np.vstack((retargeted_start_pos, retargeted_spline_pos, retargeted_end_pos))
 
-  object_shift = retargeted_spline_pos.T - object_orig_qpos[:3, :] # (3, frames)
+  print(retargeted_spline_pos.shape)
+
+  object_shift = retargeted_spline_pos[:, :3].T - object_orig_qpos[:3, :] # (3, frames)
 
   # shift hand
   qpos[:3, :] += object_shift
 
-  save_obj(retargeted_spline_pos, "scene/curve_positions.obj")
+  save_obj(retargeted_spline_pos[:, :3], "scene/curve_positions.obj")
 
   assert(len(retargeted_spline_pos) == frames)
 
@@ -366,8 +383,9 @@ if __name__ == "__main__":
       #d.qpos[:3] = qpos[:3, i % frames]
 
       d.qpos = qpos[:, i % frames]
-      d.mocap_pos = retargeted_spline_pos[i % frames]
-      d.mocap_quat = object_qpos[3:, i % frames]
+      d.mocap_pos = retargeted_spline_pos[i % frames, :3]
+      d.mocap_quat = retargeted_spline_pos[i % frames, 3:]
+      # d.mocap_quat = object_qpos[3:, i % frames]
 
 
       if i % frames == 0:
@@ -379,7 +397,7 @@ if __name__ == "__main__":
 
       frame_pts.append(qpos[:3, i % frames])
       # obj_frame_pts.append(object_qpos[:3, i % frames])    # uncomment to visualize
-      obj_retarget_frame_pts.append(retargeted_spline_pos[i % frames])
+      obj_retarget_frame_pts.append(retargeted_spline_pos[i % frames, :3])
       # obj_orig_frame_pts.append(object_orig_qpos[:3, i % frames])
 
       geometry_count = 0
