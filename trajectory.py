@@ -5,6 +5,7 @@ import torch
 from sklearn.mixture import GaussianMixture
 from scipy.optimize import minimize
 from scipy.optimize import root_scalar
+from scipy.spatial.transform import Rotation as R
 
 '''def transformSplines(splines, new_start, new_end):
     pos_count = splines[0].c.shape[0]
@@ -547,3 +548,65 @@ def avoid_barriers(pos, bounding_sphere_radius, barriers):
     print(loss)
 
     return coordinates_t.detach().numpy()
+
+
+def normalize(q):
+    return q / np.linalg.norm(q)
+
+def normalize(q):
+    return q / np.linalg.norm(q)
+
+
+def update_hand_one_frame(hand_pos_ref, hand_rot_ref, obj_pos_ref, obj_rot_ref, obj_pos_new, obj_rot_new):
+    """
+    Given a reference frame hand pose and object pose,
+    compute the hand pose for a new object pose (single frame).
+    
+    Inputs:
+        hand_pos_ref, hand_rot_ref: hand pose in reference frame [3], [4] ([w,x,y,z])
+        obj_pos_ref, obj_rot_ref: object pose in reference frame [3], [4] ([w,x,y,z])
+        obj_pos_new, obj_rot_new: object pose for the target frame [3], [4] ([w,x,y,z])
+    Returns:
+        hand_pos_new, hand_rot_new: updated hand pose in world frame
+    """
+    # Convert MuJoCo [w,x,y,z] -> SciPy [x,y,z,w]
+    R_obj_ref = R.from_quat(obj_rot_ref[[1,2,3,0]])
+    R_hand_ref = R.from_quat(hand_rot_ref[[1,2,3,0]])
+
+    # Compute hand relative to object in reference frame
+    hand_pos_rel = R_obj_ref.inv().apply(hand_pos_ref - obj_pos_ref)
+    R_rel = R_obj_ref.inv() * R_hand_ref
+
+    # Construct new object rotation
+    R_obj_new = R.from_quat(obj_rot_new[[1,2,3,0]])
+
+    # Update hand position and rotation for the new object pose
+    hand_pos_new = R_obj_new.apply(hand_pos_rel) + obj_pos_new
+    R_hand_new = R_obj_new * R_rel
+    hand_rot_new = R_hand_new.as_quat()[[3,0,1,2]]  # back to [w,x,y,z]
+    hand_rot_new = normalize(hand_rot_new)
+    if hand_rot_new[0] < 0:
+        hand_rot_new = -hand_rot_new
+
+    return hand_pos_new, hand_rot_new
+
+
+
+
+def update_wrist(object_new, hand_ref, ref_frame=0):
+    frames = object_new.shape[1]
+    hand_new = np.empty((7, frames))
+
+    # reference frame
+    obj_pos_ref = object_new[:3, ref_frame]
+    obj_rot_ref = object_new[3:7, ref_frame]
+    hand_pos_ref = hand_ref[:3]
+    hand_rot_ref = hand_ref[3:7]
+
+    for i in range(frames):
+        x, y = update_hand_one_frame(hand_pos_ref, hand_rot_ref, obj_pos_ref, obj_rot_ref, object_new[:3, i], object_new[3:7, i])
+
+        hand_new[:3, i] = x
+        hand_new[3:7, i] = y
+
+    return hand_new

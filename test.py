@@ -192,8 +192,8 @@ if __name__ == "__main__":
   object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
   object_orig_qpos = convert_to_quaternions_object(object_orig_qpos_spline_data)  # without waypoint
 
-  start_pos = object_qpos[:3, 0]
-  end_pos = object_qpos[:3, frames-1]
+  start_pos = object_qpos[:3, 0].copy()
+  end_pos = object_qpos[:3, frames-1].copy()
 
 
   boundary_radius = 0.1
@@ -300,16 +300,24 @@ if __name__ == "__main__":
   retargeted_end_pos = retargeted_spline_pos[-1, :].reshape(1, -1)
   retargeted_end_pos = np.repeat(retargeted_end_pos, end_frame_count, axis=0)
 
-  # print(retargeted_spline_pos.shape, retargeted_start_pos.shape, retargeted_end_pos.shape)
 
   retargeted_spline_pos = np.vstack((retargeted_start_pos, retargeted_spline_pos, retargeted_end_pos))
 
-  print(retargeted_spline_pos.shape)
 
   object_shift = retargeted_spline_pos[:, :3].T - object_orig_qpos[:3, :] # (3, frames)
 
-  # shift hand
-  qpos[:3, :] += object_shift
+  # shift hand for before and after contact
+  qpos[:3, :startIdx] += object_shift[:, :startIdx]
+  qpos[:3, endIdx:] += object_shift[:, endIdx:]
+  
+  # choose frame to model contact
+  reference_frame = startIdx
+  hand_ref = qpos[:7, reference_frame]
+  hand_ref[:3] += newStartPos - start_pos
+
+  hand_new = update_wrist(retargeted_spline_pos[startIdx:endIdx, :7].T, hand_ref)
+  qpos[:7, startIdx:endIdx] = hand_new
+
 
   save_obj(retargeted_spline_pos[:, :3], "scene/curve_positions.obj")
 
