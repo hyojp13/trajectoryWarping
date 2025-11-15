@@ -18,6 +18,7 @@ from smoothspline import *
 
 AGENT="trajectories"
 TASK="fryingpan_cook"
+CONTACT_FILE = "fryingpan_cook_2_right_full_export_motion.npz"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -156,12 +157,27 @@ if __name__ == "__main__":
   m = mujoco.MjModel.from_xml_string(xml_string)
   d = mujoco.MjData(m)
 
+  dumpMotion = np.load('startingTrajectories/' + AGENT + '/' + TASK + '/' + CONTACT_FILE, allow_pickle=True)
+  contacts = dumpMotion['contactFrames']
+  contactFrameCounts = dumpMotion['objectContactFrameCounts']
+  contactLocations = dumpMotion['objectContactLocations']
+  print(contacts.shape)
+  print(contactFrameCounts.shape)
+  print(contactLocations.shape, np.sum(contactFrameCounts))
+  print(np.min(contactLocations), np.max(contactLocations))
+
+  with open('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', 'r') as f:
+    num_vertices = sum(1 for line in f if line.startswith('v '))
+  print("Number of vertices:", num_vertices)
+
+  
+
 
   # correct barrier axes (issue due to using repulsive curves previously)
   barrier = correct_barrier_axes(barriers)
 
   # configurations
-  frames = 1000
+  frames = objectContacts.shape[0]
   # m = mujoco.MjModel.from_xml_path(scene_file)
   # d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
@@ -188,9 +204,13 @@ if __name__ == "__main__":
     qpos = convert_to_quaternions_MANO(qpos_spline_data)
   if AGENT == 'Allegro_right':
     qpos = convert_to_quaternions_Allegro(qpos_spline_data)
+  qpos_copy = qpos.copy()
 
   object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
   object_orig_qpos = convert_to_quaternions_object(object_orig_qpos_spline_data)  # without waypoint
+  object_orig_qpos_copy = object_orig_qpos.copy()
+
+
 
   start_pos = object_qpos[:3, 0].copy()
   end_pos = object_qpos[:3, frames-1].copy()
@@ -311,11 +331,11 @@ if __name__ == "__main__":
   qpos[:3, endIdx:] += object_shift[:, endIdx:]
   
   # choose frame to model contact
-  reference_frame = startIdx
-  hand_ref = qpos[:7, reference_frame]
-  hand_ref[:3] += newStartPos - start_pos
+  # reference_frame = startIdx
+  # hand_ref = qpos[:7, reference_frame]
+  # hand_ref[:3] += newStartPos - start_pos
 
-  hand_new = update_wrist(retargeted_spline_pos[startIdx:endIdx, :7].T, hand_ref)
+  hand_new = update_wrist(object_orig_qpos_copy[:7, startIdx:endIdx], retargeted_spline_pos[startIdx:endIdx, :7].T, qpos_copy[:7, startIdx:endIdx])
   qpos[:7, startIdx:endIdx] = hand_new
 
 

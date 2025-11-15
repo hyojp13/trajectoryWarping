@@ -12,7 +12,7 @@
         <!-- <light pos="0 -0.1 0.5" dir="0 0.2 -1" diffuse="0.7 0.7 0.7" specular="0.3 0.3 0.3" -->
             <!-- directional="true" castshadow="true" /> -->
         <body name="flashlight_mocap" mocap="true">
-            <geom type="mesh" mesh="flashlight" contype="0" conaffinity="0"  group="2" rgba="0 1 0 1.0" />
+            <geom type="mesh" mesh="flashlight" contype="0" conaffinity="0"  group="6" rgba="0 1 0 1.0" />
         </body>
         <!-- <body name="tablebody">
             <geom name="table" pos="0.13301 -0.7 0.885" size="0.5 0.5 0.5" type="plane" group="2"

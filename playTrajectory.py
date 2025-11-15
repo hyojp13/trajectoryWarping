@@ -6,6 +6,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 
 import torch
+import trimesh
 
 import xml.etree.cElementTree as ET
 
@@ -17,7 +18,8 @@ from generateBinObj import *
 from smoothspline import *
 
 AGENT="trajectories"
-TASK="fryingpan_cook_more_ctrlpts"
+TASK="fryingpan_cook"
+CONTACT_FILE = "fryingpan_cook_2_right_full_export_motion.npz"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -99,6 +101,18 @@ def rotate_keyframe_angles(keyframes, rotation):
     return keyframes_modified
 
 
+def get_contacts_per_frame(contactFrames, contactFrameCounts, contactLocations, frames):
+  vertices = [None] * frames
+
+  prevIdx = 0
+  for i in range(len(contactFrames)):
+    frameCount = contactFrameCounts[i]
+    vertices[contactFrames[i]] = contactLocations[prevIdx:prevIdx+frameCount]
+    prevIdx += frameCount
+
+  return vertices
+
+
 if __name__ == "__main__":
   build_env_xml(AGENT, TASK)
 
@@ -111,6 +125,22 @@ if __name__ == "__main__":
   m = mujoco.MjModel.from_xml_path('kitchen2.xml')
   d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
+
+  dumpMotion = np.load('startingTrajectories/' + AGENT + '/' + TASK + '/' + CONTACT_FILE, allow_pickle=True)
+  contactFrames = dumpMotion['contactFrames']
+  contactFrameCounts = dumpMotion['objectContactFrameCounts']
+  contactLocations = dumpMotion['objectContactLocations']
+  print(contactFrames.shape)
+  print(contactFrameCounts.shape)
+  print(contactLocations.shape, np.sum(contactFrameCounts))
+  print(contactLocations)
+
+  with open('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', 'r') as f:
+    num_vertices = sum(1 for line in f if line.startswith('v '))
+  print("Number of vertices:", num_vertices)
+
+  object = trimesh.load('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', process=False)
+  contacts = get_contacts_per_frame(contactFrames, contactFrameCounts, contactLocations, frames)
 
   sim_time = np.linspace(0, 1, frames)
 
@@ -154,10 +184,16 @@ if __name__ == "__main__":
       d.mocap_pos = object_qpos[:3, i % frames]
       d.mocap_quat = object_qpos[3:, i % frames]
 
+      # convert local vertex coordinates to world coordinates
+      quat_scipy = np.array([d.mocap_quat[0, 1], d.mocap_quat[0, 2], d.mocap_quat[0, 3], d.mocap_quat[0, 0]])
+      rotation = R.from_quat(quat_scipy)
+      rotation_matrix = rotation.as_matrix()
+
 
       if i % frames == 0:
         frame_pts = []
         obj_frame_pts = []
+        i = 0
 
 
       frame_pts.append(qpos[:3, i % frames])
@@ -186,6 +222,22 @@ if __name__ == "__main__":
             rgba=np.array([0, 0 if j % frames / frames < 0.72 else 1, 1, 1])
         )
       geometry_count += len(obj_frame_pts)
+
+      if isinstance(contacts[i], np.ndarray):
+        for j in range(len(contacts[i])):
+          local_vertex = object.vertices[contacts[i][j]]
+          world_vertex = (rotation_matrix @ local_vertex + d.mocap_pos)[0]
+
+          mujoco.mjv_initGeom(
+              viewer.user_scn.geoms[j + geometry_count],
+              type=mujoco.mjtGeom.mjGEOM_SPHERE,
+              size=[0.001, 0, 0],
+              pos=np.array(world_vertex),
+              mat=np.eye(3).flatten(),
+              rgba=np.array([1, 0, 0, 1])
+          )
+          # print(object.vertices[contacts[i][j]])
+        geometry_count += len(contacts[i])
       
       viewer.user_scn.ngeom = geometry_count
 

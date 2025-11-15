@@ -591,22 +591,92 @@ def update_hand_one_frame(hand_pos_ref, hand_rot_ref, obj_pos_ref, obj_rot_ref, 
     return hand_pos_new, hand_rot_new
 
 
+def pose_delta(q_i, p_i, q_f, p_f):
+    """
+    q_i, q_f: quaternions in [w, x, y, z] order
+    p_i, p_f: positions as (3,)
+    Returns (q_delta [w,x,y,z], R_delta 3x3, t_delta 3,)
+    """
+
+    # Convert to SciPy's [x, y, z, w] convention
+    q_i_xyzw = np.roll(q_i, -1)
+    q_f_xyzw = np.roll(q_f, -1)
+
+    R_i = R.from_quat(q_i_xyzw)
+    R_f = R.from_quat(q_f_xyzw)
+
+    # Compute relative rotation
+    R_delta = R_f * R_i.inv()
+
+    # Rotation matrix and quaternion (back to [w,x,y,z])
+    R_delta_matrix = R_delta.as_matrix()
+    q_delta_xyzw = R_delta.as_quat()
+    q_delta_wxyz = np.roll(q_delta_xyzw, 1)
+
+    # Compute translation delta
+    p_i = np.asarray(p_i)
+    p_f = np.asarray(p_f)
+    t_delta = p_f - R_delta_matrix @ p_i
+
+    # Build homogeneous transform
+    # T_delta = np.eye(4)
+    # T_delta[:3, :3] = R_delta_matrix
+    # T_delta[:3, 3] = t_delta
+
+    return q_delta_wxyz, t_delta
+
+def apply_pose_delta(q, p, q_delta, t_delta):
+    """
+    Apply a relative transform (q_delta, t_delta) to a pose (q, p).
+
+    q, q_delta: quaternions in [w,x,y,z] order
+    p, t_delta: positions as (3,)
+
+    Returns:
+        q_new: new quaternion [w,x,y,z]
+        p_new: new position (3,)
+    """
+    # Convert to SciPy [x,y,z,w] convention
+    q_xyzw = np.roll(q, -1)
+    q_delta_xyzw = np.roll(q_delta, -1)
+
+    # Convert to Rotation objects
+    R_pose = R.from_quat(q_xyzw)
+    R_delta = R.from_quat(q_delta_xyzw)
+
+    # Apply rotation
+    R_new = R_delta * R_pose
+    q_new_xyzw = R_new.as_quat()
+    q_new_wxyz = np.roll(q_new_xyzw, 1)
+
+    # Apply translation
+    p = np.asarray(p)
+    t_delta = np.asarray(t_delta)
+    p_new = R_delta.as_matrix() @ p + t_delta
+
+    return q_new_wxyz, p_new
 
 
-def update_wrist(object_new, hand_ref, ref_frame=0):
+def update_wrist(object_old, object_new, hand):
     frames = object_new.shape[1]
     hand_new = np.empty((7, frames))
 
-    # reference frame
-    obj_pos_ref = object_new[:3, ref_frame]
-    obj_rot_ref = object_new[3:7, ref_frame]
-    hand_pos_ref = hand_ref[:3]
-    hand_rot_ref = hand_ref[3:7]
-
     for i in range(frames):
-        x, y = update_hand_one_frame(hand_pos_ref, hand_rot_ref, obj_pos_ref, obj_rot_ref, object_new[:3, i], object_new[3:7, i])
+        q, t = pose_delta(object_old[3:7, i], object_old[:3, i], object_new[3:7, i], object_new[:3, i])
+        q_new, p_new = apply_pose_delta(hand[3:7, i], hand[:3, i], q, t)
+        hand_new[3:7, i] = q_new
+        hand_new[:3, i] = p_new
 
-        hand_new[:3, i] = x
-        hand_new[3:7, i] = y
+    # # reference frame
+    # obj_pos_ref = object_new[:3, ref_frame]
+    # obj_rot_ref = object_new[3:7, ref_frame]
+    # hand_pos_ref = hand_ref[:3]
+    # hand_rot_ref = hand_ref[3:7]
+
+    # for i in range(frames):
+    #     x, y = update_hand_one_frame(hand_pos_ref, hand_rot_ref, obj_pos_ref, obj_rot_ref, object_new[:3, i], object_new[3:7, i])
+
+    #     hand_new[:3, i] = x
+    #     hand_new[3:7, i] = y
 
     return hand_new

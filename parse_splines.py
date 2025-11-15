@@ -8,6 +8,7 @@ def parseSplines(path, avoid = None, bounding_sphere_radius = None, object_shift
     with open(path, 'r') as f:
         spline_file = json.load(f)
 
+
     numDofs = spline_file['numDofs']
     degree = spline_file['degree']
     #dimension = spline_file['dimension']
