@@ -16,6 +16,7 @@ from generate_barrier import *
 from barrier import *
 from generateBinObj import *
 from smoothspline import *
+from handContacts import *
 
 AGENT="trajectories"
 TASK="fryingpan_cook"
@@ -169,12 +170,26 @@ if __name__ == "__main__":
   obj_frame_pts = []
   obj_orig_frame_pts = []
   obj_retarget_frame_pts = []
+
+
+  #### DUMMY DATA FOR HAND CONTACTS ####
+  hand_contacts = {}  # per hand component, each contains a list of contacts per frame
+  hand_components_len = 16
+  hand_component_offset = 2  # starting index of body_id for hand components in mujoco model
+  for i in range(hand_components_len):
+    hand_contacts[i] = [None] * frames
+    for j in range(frames): # each frame corresponds to a list of contacts (face id + barycentric coords)
+      hand_contacts[i][j] = [(0, (0.2, 0.2, 0.6)), (10, (1.0, 0.0, 0.0))]
   
 
   with mujoco.viewer.launch_passive(m, d) as viewer:
+    # compute hand component meshes
+    hand_components = [None] * hand_components_len
+    for j in range(hand_components_len):
+      hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
+
     i = 0
     while viewer.is_running():
-
       step_start = time.time()
 
       # update using only translation
@@ -183,6 +198,20 @@ if __name__ == "__main__":
       d.qpos = qpos[:, i % frames]
       d.mocap_pos = object_qpos[:3, i % frames]
       d.mocap_quat = object_qpos[3:, i % frames]
+      mujoco.mj_forward(m, d)
+
+      # process local hand contacts
+      local_hand_contacts = {}
+      for hand_component_id in range(hand_components_len):
+        contacts_this_frame = hand_contacts[hand_component_id][i % frames]
+        if contacts_this_frame is not None:
+          local_hand_contacts[hand_component_id] = []
+          for contact in contacts_this_frame:
+            face_id, bary_coords = contact
+            local_pos = get_local_pos(face_id, bary_coords, hand_components[hand_component_id][0], hand_components[hand_component_id][1])
+            local_hand_contacts[hand_component_id].append(local_pos)
+          local_hand_contacts[hand_component_id] = np.array(local_hand_contacts[hand_component_id])
+
 
       # convert local vertex coordinates to world coordinates
       quat_scipy = np.array([d.mocap_quat[0, 1], d.mocap_quat[0, 2], d.mocap_quat[0, 3], d.mocap_quat[0, 0]])
@@ -238,11 +267,25 @@ if __name__ == "__main__":
           )
           # print(object.vertices[contacts[i][j]])
         geometry_count += len(contacts[i])
+
+      for j in range(len(local_hand_contacts)): # iterate over hand components
+        for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
+          local_vertex = local_hand_contacts[j][k]
+          global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
+
+          mujoco.mjv_initGeom(
+              viewer.user_scn.geoms[k + geometry_count],
+              type=mujoco.mjtGeom.mjGEOM_SPHERE,
+              size=[0.003, 0, 0],
+              pos=np.array(global_vertex),
+              mat=np.eye(3).flatten(),
+              rgba=np.array([0, 0, 1, 1])
+          )
+        geometry_count += len(local_hand_contacts[j])
       
       viewer.user_scn.ngeom = geometry_count
 
 
-      mujoco.mj_forward(m, d)
       viewer.sync()
       i += 1
 
