@@ -17,6 +17,8 @@ from barrier import *
 from generateBinObj import *
 from smoothspline import *
 from handContacts import *
+from differentiable_fk import *
+from optimize_contacts import *
 
 AGENT="trajectories"
 TASK="fryingpan_cook"
@@ -166,10 +168,6 @@ if __name__ == "__main__":
   object_qpos = convert_to_quaternions_object(object_qpos_spline_data)
 
 
-  frame_pts = []
-  obj_frame_pts = []
-  obj_orig_frame_pts = []
-  obj_retarget_frame_pts = []
 
 
   #### DUMMY DATA FOR HAND CONTACTS ####
@@ -178,8 +176,41 @@ if __name__ == "__main__":
   hand_component_offset = 2  # starting index of body_id for hand components in mujoco model
   for i in range(hand_components_len):
     hand_contacts[i] = [None] * frames
-    for j in range(frames): # each frame corresponds to a list of contacts (face id + barycentric coords)
-      hand_contacts[i][j] = [(0, (0.2, 0.2, 0.6)), (10, (1.0, 0.0, 0.0))]
+  
+  for j in range(frames): # each frame corresponds to a list of contacts (face id, barycentric coords, object contact index)
+    #   hand_contacts[i][j] = [(0, (0.2, 0.2, 0.6)), (10, (1.0, 0.0, 0.0))]
+    hand_contacts[3][j] = [(0, (0.2, 0.2, 0.6), 0)]
+    hand_contacts[9][j] = [(0, (0.2, 0.2, 0.6), 1)]
+
+  object_contacts = [None] * frames
+  for i in range(frames):
+    object_contacts[i] = np.array([100, 150])
+  contacts = object_contacts.copy()
+
+  # check that all frames have all object contacts covered
+  for i in range(frames):
+    contact_count = len(object_contacts[i])
+    contact_checker = [False] * contact_count
+
+    hand_contact_count = 0
+    for j in range(hand_components_len):
+      component_contacts = hand_contacts[j][i]
+      if component_contacts is None:
+        continue
+      for k in component_contacts:
+        contact_checker[k[2]] = True
+        hand_contact_count += 1
+    
+    if False in contact_checker:
+      raise Exception("Missing contact at frame " + str(i))
+    if hand_contact_count > contact_count:
+      raise Exception("More hand contact count than object contact count at frame " + str(i))
+
+  
+  frame_pts = []
+  obj_frame_pts = []
+  obj_orig_frame_pts = []
+  obj_retarget_frame_pts = []
   
 
   with mujoco.viewer.launch_passive(m, d) as viewer:
@@ -187,6 +218,14 @@ if __name__ == "__main__":
     hand_components = [None] * hand_components_len
     for j in range(hand_components_len):
       hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
+    
+    qpos_optimized = qpos.copy()
+    qpos = optimize_trajectory(
+        qpos_optimized, object_qpos, m, d, hand_contacts, object_contacts,
+        hand_components, hand_component_offset, object,
+        agent_type=AGENT, optimize_wrist=True, optimize_joints=True,
+        lr=0.01, n_iter=150
+    )
 
     i = 0
     while viewer.is_running():
@@ -201,13 +240,14 @@ if __name__ == "__main__":
       mujoco.mj_forward(m, d)
 
       # process local hand contacts
+      # local_hand_contacts: dict of hand component id -> list of local contact positions at frame i
       local_hand_contacts = {}
       for hand_component_id in range(hand_components_len):
         contacts_this_frame = hand_contacts[hand_component_id][i % frames]
         if contacts_this_frame is not None:
           local_hand_contacts[hand_component_id] = []
           for contact in contacts_this_frame:
-            face_id, bary_coords = contact
+            face_id, bary_coords, object_contact_idx = contact
             local_pos = get_local_pos(face_id, bary_coords, hand_components[hand_component_id][0], hand_components[hand_component_id][1])
             local_hand_contacts[hand_component_id].append(local_pos)
           local_hand_contacts[hand_component_id] = np.array(local_hand_contacts[hand_component_id])
@@ -268,7 +308,8 @@ if __name__ == "__main__":
           # print(object.vertices[contacts[i][j]])
         geometry_count += len(contacts[i])
 
-      for j in range(len(local_hand_contacts)): # iterate over hand components
+
+      for j in local_hand_contacts: # iterate over hand components
         for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
           local_vertex = local_hand_contacts[j][k]
           global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
