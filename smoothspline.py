@@ -2,6 +2,28 @@ import numpy as np
 import scipy
 from trajectory import motionStartEnd
 
+import numpy as np
+
+def break_adjacent_duplicates(points, eps=1e-8):
+    x = points[:, :3]
+
+    # Identify adjacent duplicates
+    same = np.all(x[1:] == x[:-1], axis=1)
+
+    # Count consecutive duplicate runs
+    shift_count = np.zeros(len(x), dtype=int)
+    shift_count[1:] = same.astype(int)
+    shift_count = np.cumsum(shift_count)
+
+    # Apply tiny shift along a fixed direction
+    direction =  np.array([1.0, 1.0, 1.0]) / np.sqrt(3)
+    x += shift_count[:, None] * eps * direction
+
+    points[:, :3] = x
+
+    return points
+
+
 def remove_duplicate_points(points, waypts_idx=None):
     # points : (n, 7)
     p = points[:, :3]
@@ -71,7 +93,8 @@ def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization=
             assert(len(waypts_info) == 2)
             waypts_idx, final_waypt_timesteps = waypts_info
 
-            points, waypts_idx = remove_duplicate_points(points, waypts_idx)    # (n, 7)
+            # points, waypts_idx = remove_duplicate_points(points, waypts_idx)    # (n, 7)
+            points = break_adjacent_duplicates(points)    # (n, 7)
 
             # add ending point
             waypts_idx = np.append(waypts_idx, len(points))
@@ -92,7 +115,7 @@ def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization=
                 t_section = chord_length_parameterize(points[start_idx:end_idx])
                 t_section = t_section * (final_waypt_timesteps[i] - prev_timestep - eps) + prev_timestep
 
-                print(start_idx, end_idx, t_section[:10], t_section[-10:], final_waypt_timesteps[i], prev_timestep)
+                # print(start_idx, end_idx, t_section[:10], t_section[-10:], final_waypt_timesteps[i], prev_timestep)
 
                 t[start_idx:end_idx] = t_section
                 prev_timestep = final_waypt_timesteps[i]
@@ -112,4 +135,4 @@ def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization=
 
     # splines = [scipy.interpolate.BSpline(t, c[i], k) for i in range(3)]
     
-    return spline
+    return spline, t

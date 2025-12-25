@@ -1,4 +1,5 @@
 from scipy.spatial.transform import Rotation as R
+import numpy as np
 
 def get_mesh_for_body(model, body_id):
     # find all geoms that belong to this body
@@ -61,3 +62,12 @@ def local_to_global(local_vertex, body_id, data):
 
     vertex_in_world = body_rot @ local_vertex + body_pos
     return vertex_in_world
+
+
+def get_closest_original_frame(timewarp, frame, left_biased=True):
+    if left_biased:
+        # index of last element <= frame
+        return np.searchsorted(timewarp, frame, side='right') - 1
+    else:
+        # Return index of closest element (leftmost if tied)
+        return np.argmin(np.abs(timewarp - frame))

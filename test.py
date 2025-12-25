@@ -18,10 +18,11 @@ from smoothspline import *
 from handContacts import *
 from differentiable_fk import *
 from optimize_contacts import *
+from load_contacts import *
+from differentiable_fk import *
 
 AGENT="trajectories"
 TASK="fryingpan_cook"
-CONTACT_FILE = "fryingpan_cook_2_right_full_export_motion.npz"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -83,37 +84,27 @@ def convert_to_quaternions_object(qpos_spline_data):
 
 
 def rotate_keyframe_angles(keyframes, rotation):
-    """
-    Add rotation to existing orientations in keyframes
-    keyframes: (6, n_frames) array 
-    rotation: [rx, ry, rz] to add to existing rotations
-    """
-    keyframes_modified = keyframes.copy()
-    
-    additional_rot = R.from_euler('xyz', np.radians(rotation))
-    
-    for i in range(keyframes.shape[1]):
-        # Get existing rotation
-        existing_euler = keyframes[3:6, i]
-        existing_rot = R.from_euler('xyz', existing_euler)
-        
-        combined_rot = additional_rot * existing_rot
-        
-        # Convert back to euler and store
-        keyframes_modified[3:6, i] = combined_rot.as_euler('xyz')
-    
-    return keyframes_modified
+  """
+  Add rotation to existing orientations in keyframes
+  keyframes: (6, n_frames) array 
+  rotation: [rx, ry, rz] to add to existing rotations
+  """
+  keyframes_modified = keyframes.copy()
+  
+  additional_rot = R.from_euler('xyz', np.radians(rotation))
+  
+  for i in range(keyframes.shape[1]):
+      # Get existing rotation
+      existing_euler = keyframes[3:6, i]
+      existing_rot = R.from_euler('xyz', existing_euler)
+      
+      combined_rot = additional_rot * existing_rot
+      
+      # Convert back to euler and store
+      keyframes_modified[3:6, i] = combined_rot.as_euler('xyz')
+  
+  return keyframes_modified
 
-def get_contacts_per_frame(contactFrames, contactFrameCounts, contactLocations, frames):
-  vertices = [None] * frames
-
-  prevIdx = 0
-  for i in range(len(contactFrames)):
-    frameCount = contactFrameCounts[i]
-    vertices[contactFrames[i]] = contactLocations[prevIdx:prevIdx+frameCount]
-    prevIdx += frameCount
-
-  return vertices
 
 if __name__ == "__main__":
   build_env_xml(AGENT, TASK)
@@ -166,44 +157,69 @@ if __name__ == "__main__":
       else:
           raise ValueError("No <worldbody> block found in XML.")
 
-  frames = 1000
+  
+  object = trimesh.load('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', process=False)
+  
+  # Load contacts from .lcexp file
+  contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp')
+  startIdx, endIdx = get_contact_frame_range(contacts_lcexp)
+
+  frames = len(contacts_lcexp)
   m = mujoco.MjModel.from_xml_string(xml_string)
   d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
 
-  dumpMotion = np.load('startingTrajectories/' + AGENT + '/' + TASK + '/' + CONTACT_FILE, allow_pickle=True)
-  contactFrames = dumpMotion['contactFrames']
-  contactFrameCounts = dumpMotion['objectContactFrameCounts']
-  contactLocations = dumpMotion['objectContactLocations']
-  print(contactFrames.shape)
-  print(contactFrameCounts.shape)
-  print(contactLocations.shape, np.sum(contactFrameCounts))
-  print(np.min(contactLocations), np.max(contactLocations))
-
-  with open('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', 'r') as f:
-    num_vertices = sum(1 for line in f if line.startswith('v '))
-  print("Number of vertices:", num_vertices)
-
-  # object contacts
-  object = trimesh.load('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', process=False)
-  contacts = get_contacts_per_frame(contactFrames, contactFrameCounts, contactLocations, frames)
-
-  #### DUMMY DATA FOR HAND CONTACTS ####
+  # load hand and object contacts from contacts_lcexp
   hand_contacts = {}  # per hand component, each contains a list of contacts per frame
   hand_components_len = 16
   hand_component_offset = 2  # starting index of body_id for hand components in mujoco model
   for i in range(hand_components_len):
     hand_contacts[i] = [None] * frames
   
-  for j in range(frames): # each frame corresponds to a list of contacts (face id, barycentric coords, object contact index)
-    # hand_contacts[i][j] = [(0, (0.2, 0.2, 0.6)), (10, (1.0, 0.0, 0.0))]
-    hand_contacts[3][j] = [(0, (0.2, 0.2, 0.6), 0)]
-    hand_contacts[9][j] = [(0, (0.2, 0.2, 0.6), 1)]
-
   object_contacts = [None] * frames
-  for i in range(frames):
-    object_contacts[i] = np.array([100, 150])
-  contacts = object_contacts.copy()
+  
+  # Convert contacts from .lcexp format to playTrajectory format
+  for frame_idx in range(frames):
+    frame_contacts = contacts_lcexp[frame_idx]  # List of (obj_vertex, hand_link_idx, (face_idx, bary1, bary2, bary3))
+    
+    if len(frame_contacts) == 0:
+      object_contacts[frame_idx] = np.array([], dtype=np.int64)
+      continue
+    
+    # Extract object vertex indices for this frame
+    obj_vertex_indices = []
+    for contact in frame_contacts:
+      obj_vertex_idx = contact[0]
+      obj_vertex_indices.append(obj_vertex_idx)
+    
+    object_contacts[frame_idx] = np.array(obj_vertex_indices, dtype=np.int64)
+    
+    # Create mapping from object vertex index to index in object_contacts array
+    obj_vertex_to_idx = {v: i for i, v in enumerate(obj_vertex_indices)}
+    
+    # Group contacts by hand component
+    contacts_by_component = {}
+    for contact in frame_contacts:
+      obj_vertex_idx, hand_link_idx, hand_contact_info = contact
+      face_idx, bary1, bary2, bary3 = hand_contact_info
+      
+      hand_component_id = hand_link_idx
+      
+      if hand_component_id < 0 or hand_component_id >= hand_components_len:
+        raise Exception("Hand component id is out of range at frame " + str(frame_idx))
+      
+      # Get object_contact_idx (index into object_contacts[frame_idx])
+      object_contact_idx = obj_vertex_to_idx[obj_vertex_idx]
+      
+      contact_tuple = (face_idx, (bary1, bary2, bary3), object_contact_idx)
+      
+      if hand_component_id not in contacts_by_component:
+        contacts_by_component[hand_component_id] = []
+      contacts_by_component[hand_component_id].append(contact_tuple)
+    
+    # Assign to hand_contacts
+    for hand_component_id in contacts_by_component:
+      hand_contacts[hand_component_id][frame_idx] = contacts_by_component[hand_component_id]
 
   # check that all frames have all object contacts covered
   for i in range(frames):
@@ -290,7 +306,7 @@ if __name__ == "__main__":
   # barriers.append(('sphere', {"rad": 0.09, "pos": [0.12, 0.05, 1]})) # intersection before/after contact
   # barriers.append(('rect', {"dims": [0.25, 0.04, 0.16], "pos": [-0.15, -0.45, 1.15]}))
 
-  pos_waypt_constrained, startIdx, endIdx, waypts_idx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
+  pos_waypt_constrained, _, _, waypts_idx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
 
   # objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
                                       #  bounding_sphere_radius=boundary_radius,
@@ -303,7 +319,7 @@ if __name__ == "__main__":
   # start_frame_count = int(frames * startTime)
   # contact_frame_count = int(frames * (endTime - startTime))
   start_frame_count = startIdx
-  contact_frame_count = endIdx-startIdx
+  contact_frame_count = endIdx-startIdx+1
   end_frame_count = frames - start_frame_count - contact_frame_count
 
   print("Frames before contact:", start_frame_count)
@@ -333,7 +349,7 @@ if __name__ == "__main__":
   extra_pt_count = 0
   if not np.isclose(trajectory[-1, :], endFinalPos).all():
     extra_pt_count = 20
-    moveToEndPt("scene/curve_positions.obj", endFinalPos, n=extra_pt_count)
+    moveToEndPt("scene/curve_positions.obj", endFinalPos, extra_pt_count)
     trajectory = read_obj("scene/curve_positions.obj")
   
   # print(trajectory.shape)
@@ -343,7 +359,7 @@ if __name__ == "__main__":
   new_object_qpos = np.zeros((object_qpos.shape[0], object_qpos.shape[1] + extra_pt_count))
   new_object_qpos[:3, :] = trajectory.T
   new_object_qpos[3:, :object_qpos.shape[1]] = object_qpos[3:, :]
-  new_object_qpos[3:, object_qpos.shape[1]:] = new_object_qpos[3:, object_qpos.shape[1]].reshape(object_qpos.shape[0]-3, 1)
+  new_object_qpos[3:, -extra_pt_count:] = new_object_qpos[3:, -extra_pt_count-1].reshape(object_qpos.shape[0]-3, 1)
 
   # print(new_object_qpos.shape)  # (7, n+extra)
 
@@ -351,8 +367,10 @@ if __name__ == "__main__":
 
   final_waypt_timesteps = np.array([w[2] for w in waypts])  # (waypts, )
   
-  retargeted_spline = create_smoothing_bspline(new_object_qpos.T, parameterization="waypts", waypts_info=(waypts_idx, final_waypt_timesteps))
+  retargeted_spline, contact_timewarp = create_smoothing_bspline(new_object_qpos.T, parameterization="waypts", waypts_info=(waypts_idx, final_waypt_timesteps))
 
+  # contact_timewarp: (frames + extra_pt_count,): [0, 1] -> [0, 1]
+  # all points in timewarp are DURING contact only, ie. 0 -> first contact
 
 
   retargeted_sim_time = np.linspace(0, 1, contact_frame_count)
@@ -366,16 +384,13 @@ if __name__ == "__main__":
   retargeted_end_pos = retargeted_spline_pos[-1, :].reshape(1, -1)
   retargeted_end_pos = np.repeat(retargeted_end_pos, end_frame_count, axis=0)
 
-
   retargeted_spline_pos = np.vstack((retargeted_start_pos, retargeted_spline_pos, retargeted_end_pos))
 
+  save_obj(retargeted_spline_pos[:, :3], "scene/curve_positions.obj")
+  assert(len(retargeted_spline_pos) == frames)
 
-  object_shift = retargeted_spline_pos[:, :3].T - object_orig_qpos[:3, :] # (3, frames)
 
-  # shift hand for before and after contact
-  qpos[:3, :startIdx] += object_shift[:, :startIdx]
-  qpos[:3, endIdx:] += object_shift[:, endIdx:]
-  
+  ##### hand retargeting #####
   # choose frame to model contact
   # reference_frame = startIdx
   # hand_ref = qpos[:7, reference_frame]
@@ -384,30 +399,76 @@ if __name__ == "__main__":
   # hand_new = update_wrist(object_orig_qpos_copy[:7, startIdx:endIdx], retargeted_spline_pos[startIdx:endIdx, :7].T, qpos_copy[:7, startIdx:endIdx])
   # qpos[:7, startIdx:endIdx] = hand_new
 
+  # retarget hand during contact
+  # compute hand component meshes
+  hand_components = [None] * hand_components_len
+  for j in range(hand_components_len):
+    hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
 
-  save_obj(retargeted_spline_pos[:, :3], "scene/curve_positions.obj")
+  ######## TODO: check endpoints #######
+  # contact_timewarp: (frames + extra_pt_count,)
+  # [0, 1] -> [0, 1] where the indices are progressing linearly from 0 to 1, and each index contains an output in [0,1]
+  # all points in timewarp are during "contact" only, but this actually includes the non contact ranges as all frames are taken as contact
 
-  assert(len(retargeted_spline_pos) == frames)
+  # for each frame in the contact range, we find the closest original frame using the timewarp.
+  # the closest original frame is in [0, frames+extra_pt_count] (length of contact_timewarp)
+  # this is clipped to [0, frames] to match the contact data that we have
+  # the closest original frame more precisely in [start_frame_count, frames+extra_pt_count]
+  # since we are marking all frames as contact, which actually only begin at start_frame_count
+  optimization_device = "cpu"
+  # optimization_device = "mps" if torch.backends.mps.is_available() else "cpu"
+  print(f"Using device for optimization: {optimization_device}")
 
+  kinematic_tree = extract_kinematic_tree(m, hand_component_offset, hand_components_len)
+  kinematic_tree_torch = precompute_kinematic_tree_tensors(
+      kinematic_tree, hand_component_offset, hand_components_len, optimization_device
+  )
+
+  for frame in range(contact_frame_count):
+    closet_original_frame = get_closest_original_frame(contact_timewarp, (frame+1)/contact_frame_count)
+
+    print(frame, "/", contact_frame_count, ":", closet_original_frame, start_frame_count, frames+extra_pt_count)
+    if closet_original_frame > endIdx:  # maps to final entering frames
+        print("found frame maps to final entering frames")
+        closet_original_frame = endIdx
+
+    # Pre-compute local hand contacts for this frame (cached across optimization iterations)
+    local_contacts_cache = precompute_local_hand_contacts(
+        hand_contacts, hand_components, hand_components_len,
+        closet_original_frame, optimization_device
+    )
+
+    # initial hand frame starts with actuation at closest_original_frame
+    if frame == 0:
+        wrist_init = retargeted_spline_pos[start_frame_count, :3].T
+    else:
+        wrist_init = qpos[:3, start_frame_count + frame - 1]  # previous optimized
+
+    initial_qpos = np.concatenate((wrist_init, qpos_copy[3:, closet_original_frame]))
+
+
+    qpos[:, start_frame_count+frame] = optimize_frame(
+        initial_qpos,
+        retargeted_spline_pos[start_frame_count+frame, :],
+        m, d, hand_contacts, object_contacts,
+        hand_components, hand_component_offset, object, closet_original_frame,
+        kinematic_tree, lr=0.01, n_iter=5 + 145*(frame==0), optimize_wrist=True,
+        optimize_joints=True, agent_type=AGENT,
+        print_logs=True, device=optimization_device,
+        kinematic_tree_torch=kinematic_tree_torch,
+        local_contacts_cache=local_contacts_cache
+    )
+  
+  # shift hand for before and after contact
+  hand_shift_start = qpos[:3, startIdx+1] - qpos_copy[:3, startIdx+1]
+  hand_shift_end = qpos[:3, endIdx] - qpos_copy[:3, endIdx]
+  qpos[:3, :startIdx] += hand_shift_start[:, np.newaxis]
+  qpos[:3, endIdx+1:] += hand_shift_end[:, np.newaxis]
 
 
   # retarget hand before and after contact
   qpos_start = qpos[:3, :start_frame_count]
-  # x1 = np.linspace(0, 1, start_frame_count)
-  # start_splines = []
-  # for i in range(3):
-  #     spl = scipy.interpolate.make_interp_spline(x1, qpos_start[i, :], k=3)
-  #     start_splines.append(spl)
-
-  
   qpos_end = qpos[:3, -end_frame_count:]
-  # x2 = np.linspace(0, 1, end_frame_count)
-  # end_splines = []
-  # for i in range(3):
-  #     spl = scipy.interpolate.make_interp_spline(x2, qpos_end[i, :], k=3)
-  #     end_splines.append(spl)
-
-  # print(qpos_end)
 
   # retarget hand before contact
   barrierConstraints(qpos_start.T, hand_boundary_radius, barriers = barriers, traj_path = "scene/hand_start_positions.obj")
@@ -418,7 +479,7 @@ if __name__ == "__main__":
   save_obj(obj, "scene/hand_start_positions.obj")
 
   retargeted_start_trajectory = read_obj("scene/hand_start_positions.obj")
-  retargeted_start_spline = create_smoothing_bspline(retargeted_start_trajectory, parameterization="uniform")
+  retargeted_start_spline, _ = create_smoothing_bspline(retargeted_start_trajectory, parameterization="uniform")
   retargeted_sim_time = np.linspace(0, 1, start_frame_count)
   qpos[:3, :start_frame_count] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_start_spline))
   # qpos[:3, :start_frame_count] = retargeted_start_trajectory.T
@@ -434,7 +495,7 @@ if __name__ == "__main__":
 
 
   retargeted_end_trajectory = read_obj("scene/hand_end_positions.obj")
-  retargeted_end_spline = create_smoothing_bspline(retargeted_end_trajectory, parameterization="uniform")
+  retargeted_end_spline, _ = create_smoothing_bspline(retargeted_end_trajectory, parameterization="uniform")
   retargeted_sim_time = np.linspace(0, 1, end_frame_count)
   qpos[:3, -end_frame_count:] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_end_spline))
   # qpos[:3, -end_frame_count:] = retargeted_end_trajectory.T
@@ -448,19 +509,6 @@ if __name__ == "__main__":
   
 
   with mujoco.viewer.launch_passive(m, d) as viewer:
-    # compute hand component meshes
-    hand_components = [None] * hand_components_len
-    for j in range(hand_components_len):
-      hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
-    
-    qpos_optimized = qpos.copy()
-    qpos = optimize_trajectory(
-        qpos_optimized, object_qpos, m, d, hand_contacts, object_contacts,
-        hand_components, hand_component_offset, object,
-        agent_type=AGENT, optimize_wrist=True, optimize_joints=True,
-        lr=0.01, n_iter=1, start_frame=start_frame_count, end_frame=start_frame_count+contact_frame_count
-    )
-    
     i = 0
     while viewer.is_running():
 
@@ -621,9 +669,9 @@ if __name__ == "__main__":
               rgba=np.array([0, 0, 0, 1]))
         geometry_count += len(waypts)
 
-      if isinstance(contacts[i], np.ndarray):
-        for j in range(len(contacts[i])):
-          local_vertex = object.vertices[contacts[i][j]]
+      if isinstance(object_contacts[i], np.ndarray):
+        for j in range(len(object_contacts[i])):
+          local_vertex = object.vertices[object_contacts[i][j]]
           world_vertex = (rotation_matrix @ local_vertex + d.mocap_pos)[0]
 
           mujoco.mjv_initGeom(
@@ -634,8 +682,7 @@ if __name__ == "__main__":
               mat=np.eye(3).flatten(),
               rgba=np.array([1, 0, 0, 1])
           )
-          # print(object.vertices[contacts[i][j]])
-        geometry_count += len(contacts[i])
+        geometry_count += len(object_contacts[i])
 
 
       for j in local_hand_contacts: # iterate over hand components
