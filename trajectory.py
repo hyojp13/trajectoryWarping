@@ -297,7 +297,7 @@ def trajectoryConstraintsPolyline(pos, startPos=None, endPos=None, waypts=None, 
                 # move polyline from waypts_idx to end to waypt to end
                 pos[:, waypts_idx[i-1]:endIdx] = transformSplines(pos[:, waypts_idx[i-1]:endIdx], waypts_pos[i-1, :], endPos)
             else:
-                print("else i:", waypts_idx[i-1], endIdx)
+                print("else i:", waypts_idx[i-1], waypts_idx[i])
                 pos[:, waypts_idx[i-1]:waypts_idx[i]] = transformSplines(pos[:, waypts_idx[i-1]:waypts_idx[i]], waypts_pos[i-1], waypts_pos[i])
 
         for i in range(pos_count):

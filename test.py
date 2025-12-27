@@ -143,7 +143,13 @@ if __name__ == "__main__":
   new_start_pos_shift = np.array(config['new_start_pos_shift'])
   end_final_pos_shift = np.array(config['end_final_pos_shift'])
   end_obj_pos_shift = np.array(config['end_obj_pos_shift'])
-  waypts = [(np.array(w[0]), w[1], w[2]) for w in config['waypts']]
+  # Process waypoints, preserving rotation if present
+  waypts = []
+  for w in config['waypts']:
+    if len(w) == 4:
+      waypts.append((np.array(w[0]), w[1], w[2], w[3]))
+    else:
+      waypts.append((np.array(w[0]), w[1], w[2]))
   extra_pt_count = config['extra_pt_count']
   optimization_device = config['optimization_device']
   object_mesh_file = config['object_mesh_file']
@@ -333,7 +339,11 @@ if __name__ == "__main__":
   waypts_processed = []
   for waypt in waypts:
     waypt_pos = newStartPos + waypt[0]  # Add waypoint offset to newStartPos
-    waypts_processed.append((waypt_pos, waypt[1], waypt[2]))
+    if len(waypt) == 4:
+      # Include rotation if provided
+      waypts_processed.append((waypt_pos, waypt[1], waypt[2], waypt[3]))
+    else:
+      waypts_processed.append((waypt_pos, waypt[1], waypt[2]))
   waypts = waypts_processed
   # waypts = []
 
@@ -346,16 +356,77 @@ if __name__ == "__main__":
 
   pos_waypt_constrained, _, _, waypts_idx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
 
-  # objectSplines, startTime, endTime, wayPointIdx = trajectoryConstraints(objectSplines, startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
-                                      #  bounding_sphere_radius=boundary_radius,
-                                      #  barriers=barriers)
-  
+  # Apply rotations at waypoints if specified
+  # Rotations are applied gradually from the previous waypoint (or contact start) to current waypoint
+  cumulative_rotation = R.identity()  # Track total rotation applied so far
+
+  for i, waypt in enumerate(waypts):
+    if len(waypt) == 4:  # Has rotation component
+      rotation_deg = waypt[3]  # [rx, ry, rz] in degrees
+      print("Rotating by", rotation_deg)
+
+      # Rotation happens FROM previous waypoint TO current waypoint
+      # So if waypoint i has rotation, we rotate from waypoint i-1 to waypoint i
+      if i == 0:
+        # Waypoint 0 has rotation: rotate from contact start to waypoint 0
+        start_frame_idx = startIdx
+      else:
+        # Waypoint i has rotation: rotate from waypoint i-1 to waypoint i
+        start_frame_idx = waypts_idx[i-1]
+
+      end_frame_idx = waypts_idx[i]
+
+      # Create the incremental rotation for this segment
+      segment_rotation = R.from_euler('xyz', rotation_deg, degrees=True)
+
+      # Apply rotation gradually from start_frame_idx to end_frame_idx
+      num_frames = end_frame_idx - start_frame_idx
+      if num_frames > 0:
+        for frame_offset in range(num_frames + 1):
+          frame_idx = start_frame_idx + frame_offset
+
+          # Linear interpolation factor
+          t = frame_offset / num_frames
+
+          # Slerp between identity and segment_rotation
+          key_rots = R.from_quat([R.identity().as_quat(), segment_rotation.as_quat()])
+          slerp = scipy.spatial.transform.Slerp([0, 1], key_rots)
+          interpolated_rot = slerp(t)
+
+          # Combine with cumulative rotation from previous waypoints
+          total_rotation = interpolated_rot * cumulative_rotation
+
+          # Get current quaternion at this frame
+          current_quat = object_qpos[3:7, frame_idx]  # [w, x, y, z]
+          current_quat_scipy = np.array([current_quat[1], current_quat[2], current_quat[3], current_quat[0]])
+          current_rot = R.from_quat(current_quat_scipy)
+
+          # Apply rotation: new = total_rotation * current
+          new_rot = total_rotation * current_rot
+
+          # Convert back to MuJoCo format [w, x, y, z]
+          new_quat_scipy = new_rot.as_quat()  # [x, y, z, w]
+          object_qpos[3:7, frame_idx] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])
+
+      # Update cumulative rotation
+      cumulative_rotation = segment_rotation * cumulative_rotation
+
+      # Apply cumulative rotation to all frames after this waypoint
+      for frame_idx in range(end_frame_idx + 1, frames):
+        current_quat = object_qpos[3:7, frame_idx]  # [w, x, y, z]
+        current_quat_scipy = np.array([current_quat[1], current_quat[2], current_quat[3], current_quat[0]])
+        current_rot = R.from_quat(current_quat_scipy)
+
+        # Apply cumulative rotation
+        new_rot = cumulative_rotation * current_rot
+
+        # Convert back to MuJoCo format [w, x, y, z]
+        new_quat_scipy = new_rot.as_quat()  # [x, y, z, w]
+        object_qpos[3:7, frame_idx] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])
+
   #generate_barrier('rect', {"dims": [0.05, 0.05, 0.05], "pos": [-0.08886439, -0.26607215, 1.2973825]}, path="/Users/hjp/desktop/repulsive-curves/scenes/retargeting/barrierRect.obj")
   #generate_barrier('sphere', {"rad": 0.05, "pos": [-0.08886439, -0.26607215, 1.2973825]}, path="/Users/hjp/desktop/repulsive-curves/scenes/retargeting/barrierSphere.obj")
 
-  # calculate number of frames for each segment of the trajectory
-  # start_frame_count = int(frames * startTime)
-  # contact_frame_count = int(frames * (endTime - startTime))
   start_frame_count = startIdx
   contact_frame_count = endIdx-startIdx+1
   end_frame_count = frames - start_frame_count - contact_frame_count
@@ -363,10 +434,6 @@ if __name__ == "__main__":
   print("Frames before contact:", start_frame_count)
   print("Frames of contact:", contact_frame_count)
   print("Frames after contact:", end_frame_count)
-
-  # print(start_frame_count, contact_frame_count, end_frame_count)
-
-  # startFrame = startTime * frames
 
   # ensure that waypoints are not too close to a barrier
   if not barrierWayptsCheck(barriers, waypts, boundary_radius):
@@ -405,17 +472,30 @@ if __name__ == "__main__":
   # assert new_object_qpos[:3, waypts_idx[i]]) is close to waypts_idx[i] for all i
 
   final_waypt_timesteps = np.array([w[2] for w in waypts])  # (waypts, )
-  
-  retargeted_spline, contact_timewarp = create_smoothing_bspline(new_object_qpos.T, parameterization="waypts", waypts_info=(waypts_idx, final_waypt_timesteps))
+
+  # Create separate splines for position and quaternion to avoid coupling
+  # Position spline (using only xyz, not affected by rotation)
+  pos_spline, contact_timewarp = create_smoothing_bspline(new_object_qpos[:3, :].T, parameterization="waypts", waypts_info=(waypts_idx, final_waypt_timesteps))
 
   # contact_timewarp: (frames + extra_pt_count,): [0, 1] -> [0, 1]
   # all points in timewarp are DURING contact only, ie. 0 -> first contact
 
+  # Quaternion spline (using rotated quaternions)
+  quat_spline, _ = create_smoothing_bspline(new_object_qpos[3:7, :].T, parameterization="waypts", waypts_info=(waypts_idx, final_waypt_timesteps))
+
+  # Sample the spline at high resolution to check for barrier violations
+  check_sim_time = np.linspace(0, 1, contact_frame_count * 10)
+  check_pos = np.array(scipy.interpolate.splev(check_sim_time, pos_spline)).T
+
 
   retargeted_sim_time = np.linspace(0, 1, contact_frame_count)
-  retargeted_spline_pos = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_spline)).T
 
-  # print(retargeted_spline_pos.shape, contact_frame_count)
+  # Sample position and quaternion separately
+  retargeted_pos = np.array(scipy.interpolate.splev(retargeted_sim_time, pos_spline)).T
+  retargeted_quat = np.array(scipy.interpolate.splev(retargeted_sim_time, quat_spline)).T
+
+  # Combine them
+  retargeted_spline_pos = np.hstack([retargeted_pos, retargeted_quat])
 
   # add points for the position before and after contact
   retargeted_start_pos = retargeted_spline_pos[0, :].reshape(1, -1)
@@ -430,14 +510,6 @@ if __name__ == "__main__":
 
 
   ##### hand retargeting #####
-  # choose frame to model contact
-  # reference_frame = startIdx
-  # hand_ref = qpos[:7, reference_frame]
-  # hand_ref[:3] += newStartPos - start_pos
-
-  # hand_new = update_wrist(object_orig_qpos_copy[:7, startIdx:endIdx], retargeted_spline_pos[startIdx:endIdx, :7].T, qpos_copy[:7, startIdx:endIdx])
-  # qpos[:7, startIdx:endIdx] = hand_new
-
   # retarget hand during contact
   # compute hand component meshes
   hand_components = [None] * hand_components_len
@@ -555,8 +627,8 @@ if __name__ == "__main__":
       #d.qpos[:3] = qpos[:3, i % frames]
 
       d.qpos = qpos[:, i % frames]
-      d.mocap_pos = retargeted_spline_pos[i % frames, :3]
-      d.mocap_quat = retargeted_spline_pos[i % frames, 3:]
+      d.mocap_pos[0] = retargeted_spline_pos[i % frames, :3]
+      d.mocap_quat[0] = retargeted_spline_pos[i % frames, 3:]
       mujoco.mj_forward(m, d)
 
 
