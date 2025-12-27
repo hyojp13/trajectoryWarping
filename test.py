@@ -1,4 +1,6 @@
 import time
+import argparse
+import json
 
 import mujoco
 import mujoco.viewer
@@ -20,9 +22,6 @@ from differentiable_fk import *
 from optimize_contacts import *
 from load_contacts import *
 from differentiable_fk import *
-
-AGENT="trajectories"
-TASK="fryingpan_cook"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -106,7 +105,49 @@ def rotate_keyframe_angles(keyframes, rotation):
   return keyframes_modified
 
 
+def load_config(config_path):
+  with open(config_path, 'r') as f:
+    config = json.load(f)
+
+  required_fields = [
+    'agent', 'task', 'scene_file', 'barriers',
+    'learning_rate', 'n_iter', 'first_frame_iter',
+    'boundary_radius', 'hand_boundary_radius',
+    'new_start_pos_shift', 'end_final_pos_shift', 'end_obj_pos_shift',
+    'waypts', 'extra_pt_count', 'optimization_device',
+    'object_mesh_file'
+  ]
+  for field in required_fields:
+    if field not in config:
+      raise ValueError(f"Configuration file must contain '{field}' field")
+
+  return config
+
+
 if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description='Run trajectory retargeting with configuration file')
+  parser.add_argument('config', type=str, help='Path to configuration JSON file')
+  args = parser.parse_args()
+
+  # Load configuration
+  config = load_config(args.config)
+  AGENT = config['agent']
+  TASK = config['task']
+  scene_file = config['scene_file']
+  barriers = config['barriers']
+  learning_rate = config['learning_rate']
+  n_iter = config['n_iter']
+  first_frame_iter = config['first_frame_iter']
+  boundary_radius = config['boundary_radius']
+  hand_boundary_radius = config['hand_boundary_radius']
+  new_start_pos_shift = np.array(config['new_start_pos_shift'])
+  end_final_pos_shift = np.array(config['end_final_pos_shift'])
+  end_obj_pos_shift = np.array(config['end_obj_pos_shift'])
+  waypts = [(np.array(w[0]), w[1], w[2]) for w in config['waypts']]
+  extra_pt_count = config['extra_pt_count']
+  optimization_device = config['optimization_device']
+  object_mesh_file = config['object_mesh_file']
+
   build_env_xml(AGENT, TASK)
 
   # retrieve splines
@@ -116,16 +157,11 @@ if __name__ == "__main__":
   objectSplinesOrig, _, _ = parseSplines('startingTrajectories/' + AGENT + '/' + TASK + '/object.smexp')
 
   # add mesh barriers to MuJoCo
-  scene_file = "kitchen2.xml"
   with open(scene_file) as f:
     xml_string = f.read()
-  
-  barriers = []
-  barriers.append(("/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/hoods/pack_2/visuals/model_0.obj", {"scale":(1.15613, 1.06643, 1.15613), "pos":(2.2-0.15, -0.3, 2.24807-0.3)}))
-  barriers.append(('rect', {"dims": [1, 0.4, 0.03], "pos": [3.2, -0.2, 1.85-0.445]}))
-  barriers.append(('rect', {"dims": [0.03, 0.2, 0.15], "pos": [2.9
-                                                               , -0.2, 1.85-0.385]}))
-  barriers.append(('rect', {"dims": [0.03, 0.2, 0.15], "pos": [3.15, -0.2, 1.85-0.385]}))
+
+  # Convert barriers from config format to tuples
+  barriers = [tuple(b) if isinstance(b, list) else b for b in barriers]
   barriers = process_barriers(barriers) # apply scale and pos to obj barriers
 
   for i, barrier in enumerate(barriers):
@@ -157,9 +193,9 @@ if __name__ == "__main__":
       else:
           raise ValueError("No <worldbody> block found in XML.")
 
-  
-  object = trimesh.load('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', process=False)
-  
+
+  object = trimesh.load(object_mesh_file, process=False)
+
   # Load contacts from .lcexp file
   contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp')
   startIdx, endIdx = get_contact_frame_range(contacts_lcexp)
@@ -277,13 +313,9 @@ if __name__ == "__main__":
   start_pos = object_qpos[:3, 0].copy()
   end_pos = object_qpos[:3, frames-1].copy()
 
-
-  boundary_radius = 0.1
-  hand_boundary_radius = 0.1
-
-  newStartPos = start_pos + ([-0.23, 0.18, 0])
-  endFinalPos = end_pos + ([0.85, 0.18, 0.47]) # Actual end destination
-  endObjPos = endFinalPos + ([0, 0, 0.2])  # Motion should end here, points from here to endFinalPos is linear interpolation
+  newStartPos = start_pos + new_start_pos_shift
+  endFinalPos = end_pos + end_final_pos_shift  # Actual end destination
+  endObjPos = endFinalPos + end_obj_pos_shift  # Motion should end here, points from here to endFinalPos is linear interpolation
 
   # generate desired end object
   # basket_mesh = create_basket(radius=0.1, height=0.16, wall_thickness=0.01)
@@ -296,7 +328,13 @@ if __name__ == "__main__":
   # endObj = 'scene/basket.obj'
   # waypts = [start_pos + [-0.2, 0, 0.5],
             # start_pos + [0, -0.5, 0.2]]
-  waypts = [(newStartPos + ([-0.2, 0, 0.0]), 0.6, 0.2)]
+
+  # Process waypoints: convert relative positions to absolute positions
+  waypts_processed = []
+  for waypt in waypts:
+    waypt_pos = newStartPos + waypt[0]  # Add waypoint offset to newStartPos
+    waypts_processed.append((waypt_pos, waypt[1], waypt[2]))
+  waypts = waypts_processed
   # waypts = []
 
   # barriers.append(('rect', {"dims": [0.12, 0.04, 0.14], "pos": [0.05, -0.40607215, 1.12]}))
@@ -346,11 +384,12 @@ if __name__ == "__main__":
   trajectory = read_obj("scene/curve_positions.obj")  # (frames, 3)
 
   # ensure trajectory ends in end position
-  extra_pt_count = 0
   if not np.isclose(trajectory[-1, :], endFinalPos).all():
-    extra_pt_count = 20
     moveToEndPt("scene/curve_positions.obj", endFinalPos, extra_pt_count)
     trajectory = read_obj("scene/curve_positions.obj")
+  else:
+    # If trajectory already ends at final position, set extra_pt_count to 0
+    extra_pt_count = 0
   
   # print(trajectory.shape)
 
@@ -415,8 +454,6 @@ if __name__ == "__main__":
   # this is clipped to [0, frames] to match the contact data that we have
   # the closest original frame more precisely in [start_frame_count, frames+extra_pt_count]
   # since we are marking all frames as contact, which actually only begin at start_frame_count
-  optimization_device = "cpu"
-  # optimization_device = "mps" if torch.backends.mps.is_available() else "cpu"
   print(f"Using device for optimization: {optimization_device}")
 
   kinematic_tree = extract_kinematic_tree(m, hand_component_offset, hand_components_len)
@@ -452,7 +489,7 @@ if __name__ == "__main__":
         retargeted_spline_pos[start_frame_count+frame, :],
         m, d, hand_contacts, object_contacts,
         hand_components, hand_component_offset, object, closet_original_frame,
-        kinematic_tree, lr=0.01, n_iter=5 + 145*(frame==0), optimize_wrist=True,
+        kinematic_tree, lr=learning_rate, n_iter=n_iter + (first_frame_iter-n_iter)*(frame==0), optimize_wrist=True,
         optimize_joints=True, agent_type=AGENT,
         print_logs=True, device=optimization_device,
         kinematic_tree_torch=kinematic_tree_torch,
