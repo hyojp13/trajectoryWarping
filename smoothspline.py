@@ -71,7 +71,7 @@ def chord_length_parameterize(points):
 # waypts_info must be a tuple (waypts_idx, final_waypt_timesteps) where:
 # waypts_idx: frame where the waypoint currently lies
 # final_waypt_timesteps: at what percent of the final trajectory the waypoint should end
-def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization="uniform", waypts_info = None):
+def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization="uniform", waypts_info = None, smoothing_factor=0.001):
     if smoothing is None:
         smoothing = points.shape[0]
 
@@ -126,10 +126,10 @@ def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization=
     
 
     points_list = [*points.T]
-    
+
     # print(np.split(points, points.shape[0])[0].shape)
     # print(np.split(points, points.shape[0]))
-    spline, u = scipy.interpolate.splprep(points_list, u=t, s=0.001, k=degree)
+    spline, u = scipy.interpolate.splprep(points_list, u=t, s=smoothing_factor, k=degree)
 
     # t, c, k = spline
 

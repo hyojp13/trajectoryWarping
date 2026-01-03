@@ -483,10 +483,6 @@ if __name__ == "__main__":
   # Quaternion spline (using rotated quaternions)
   quat_spline, _ = create_smoothing_bspline(new_object_qpos[3:7, :].T, parameterization="waypts", waypts_info=(waypts_idx, final_waypt_timesteps))
 
-  # Sample the spline at high resolution to check for barrier violations
-  check_sim_time = np.linspace(0, 1, contact_frame_count * 10)
-  check_pos = np.array(scipy.interpolate.splev(check_sim_time, pos_spline)).T
-
 
   retargeted_sim_time = np.linspace(0, 1, contact_frame_count)
 
@@ -530,7 +526,7 @@ if __name__ == "__main__":
 
   kinematic_tree = extract_kinematic_tree(m, hand_component_offset, hand_components_len)
   kinematic_tree_torch = precompute_kinematic_tree_tensors(
-      kinematic_tree, hand_component_offset, hand_components_len, optimization_device
+    kinematic_tree, hand_component_offset, hand_components_len, optimization_device
   )
 
   for frame in range(contact_frame_count):
@@ -538,41 +534,67 @@ if __name__ == "__main__":
 
     print(frame, "/", contact_frame_count, ":", closet_original_frame, start_frame_count, frames+extra_pt_count)
     if closet_original_frame > endIdx:  # maps to final entering frames
-        print("found frame maps to final entering frames")
-        closet_original_frame = endIdx
+      print("found frame maps to final entering frames")
+      closet_original_frame = endIdx
 
     # Pre-compute local hand contacts for this frame (cached across optimization iterations)
     local_contacts_cache = precompute_local_hand_contacts(
-        hand_contacts, hand_components, hand_components_len,
-        closet_original_frame, optimization_device
+      hand_contacts, hand_components, hand_components_len,
+      closet_original_frame, optimization_device
     )
 
     # initial hand frame starts with actuation at closest_original_frame
     if frame == 0:
-        wrist_init = retargeted_spline_pos[start_frame_count, :3].T
+      wrist_init_pos = retargeted_spline_pos[start_frame_count, :3].T
+      wrist_init_quat = qpos_copy[3:7, closet_original_frame]
     else:
-        wrist_init = qpos[:3, start_frame_count + frame - 1]  # previous optimized
+      wrist_init_pos = qpos[:3, start_frame_count + frame - 1]  # previous optimized
 
-    initial_qpos = np.concatenate((wrist_init, qpos_copy[3:, closet_original_frame]))
+      prev_obj_quat = retargeted_spline_pos[start_frame_count+frame-1, 3:7]  # w,x,y,z
+      curr_obj_quat = retargeted_spline_pos[start_frame_count+frame, 3:7]  # w,x,y,z
+
+      # Compute relative rotation from previous to current frame
+      prev_obj_rot = R.from_quat(prev_obj_quat)
+      curr_obj_rot = R.from_quat(curr_obj_quat)
+      delta_rotation = curr_obj_rot * prev_obj_rot.inv()
+
+      # Apply same delta rotation to previous hand wrist rotation
+      prev_wrist_quat = qpos[3:7, start_frame_count + frame - 1]  # w,x,y,z
+      prev_wrist_rot = R.from_quat(prev_wrist_quat)
+      new_wrist_rot = delta_rotation * prev_wrist_rot
+      wrist_init_quat = new_wrist_rot.as_quat()  # w,x,y,z
+
+    initial_qpos = np.concatenate((wrist_init_pos, wrist_init_quat, qpos_copy[7:, closet_original_frame]))
 
 
     qpos[:, start_frame_count+frame] = optimize_frame(
-        initial_qpos,
-        retargeted_spline_pos[start_frame_count+frame, :],
-        m, d, hand_contacts, object_contacts,
-        hand_components, hand_component_offset, object, closet_original_frame,
-        kinematic_tree, lr=learning_rate, n_iter=n_iter + (first_frame_iter-n_iter)*(frame==0), optimize_wrist=True,
-        optimize_joints=True, agent_type=AGENT,
-        print_logs=True, device=optimization_device,
-        kinematic_tree_torch=kinematic_tree_torch,
-        local_contacts_cache=local_contacts_cache
+      initial_qpos,
+      retargeted_spline_pos[start_frame_count+frame, :],
+      m, d, hand_contacts, object_contacts,
+      hand_components, hand_component_offset, object, closet_original_frame,
+      kinematic_tree, lr=learning_rate, n_iter=n_iter + (first_frame_iter-n_iter)*(frame==0), optimize_wrist=True,
+      optimize_joints=True, agent_type=AGENT,
+      print_logs=True, device=optimization_device,
+      kinematic_tree_torch=kinematic_tree_torch,
+      local_contacts_cache=local_contacts_cache
     )
   
-  # shift hand for before and after contact
-  hand_shift_start = qpos[:3, startIdx+1] - qpos_copy[:3, startIdx+1]
+  # shift hand translation for before and after contact
+  hand_shift_start = qpos[:3, startIdx] - qpos_copy[:3, startIdx]
   hand_shift_end = qpos[:3, endIdx] - qpos_copy[:3, endIdx]
   qpos[:3, :startIdx] += hand_shift_start[:, np.newaxis]
   qpos[:3, endIdx+1:] += hand_shift_end[:, np.newaxis]
+
+  # Compute rotation difference at contact boundaries
+  wrist_rot_end_orig = R.from_quat(qpos_copy[3:7, endIdx])
+  wrist_rot_end_new = R.from_quat(qpos[3:7, endIdx])
+  delta_rot_end = wrist_rot_end_new * wrist_rot_end_orig.inv()
+
+  # Apply rotation difference to frames after contact
+  for i in range(endIdx+1, frames):
+    orig_rot = R.from_quat(qpos_copy[3:7, i])
+    new_rot = delta_rot_end * orig_rot
+    qpos[3:7, i] = new_rot.as_quat()
 
 
   # retarget hand before and after contact
@@ -609,7 +631,50 @@ if __name__ == "__main__":
   qpos[:3, -end_frame_count:] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_end_spline))
   # qpos[:3, -end_frame_count:] = retargeted_end_trajectory.T
 
-  
+
+  # Smooth hand trajectory
+  smoothing_factor = 0.01
+  joint_smoothing_factor = 0.001
+
+  # Smooth translation
+  trans_spline, _ = create_smoothing_bspline(qpos[:3, :].T, parameterization="uniform", smoothing_factor=smoothing_factor)
+  times = np.linspace(0, 1, frames)
+  qpos[:3, :] = np.array(scipy.interpolate.splev(times, trans_spline))
+
+  # Smooth wrist rotation via euler angles
+  wrist_quats = qpos[3:7, :].T  # (frames, 4)
+  wrist_rotations = R.from_quat(wrist_quats)
+  wrist_euler = wrist_rotations.as_euler('xyz')  # (frames, 3)
+
+  # Smooth euler angles with B-spline
+  wrist_euler_spline, _ = create_smoothing_bspline(wrist_euler, parameterization="uniform", smoothing_factor=smoothing_factor)
+  smoothed_wrist_euler = np.array(scipy.interpolate.splev(times, wrist_euler_spline)).T  # (frames, 3)
+
+  # Convert back to quaternions
+  smoothed_wrist_rotations = R.from_euler('xyz', smoothed_wrist_euler)
+  qpos[3:7, :] = smoothed_wrist_rotations.as_quat().T
+
+  # Smooth finger joints with direct quaternion smoothing
+  # if AGENT == 'MANO_right' or AGENT == 'trajectories':
+  #   # MANO: qpos[7:] contains 16 finger joints as quaternions (60 values = 15 joints × 4)
+  #   # Smooth each joint's quaternion components directly and normalize
+  #   num_finger_joints = 15  # (51 - 3) / 3 = 16 euler joints -> 15 quaternion joints in qpos[7:67]
+  #   for joint_idx in range(num_finger_joints):
+  #     quat_start_idx = 7 + joint_idx * 4
+  #     quat_end_idx = quat_start_idx + 4
+
+  #     # Smooth quaternion components directly
+  #     joint_quat_spline, _ = create_smoothing_bspline(
+  #       qpos[quat_start_idx:quat_end_idx, :].T,
+  #       parameterization="uniform",
+  #       smoothing_factor=joint_smoothing_factor
+  #     )
+  #     smoothed_joint_quats = np.array(scipy.interpolate.splev(times, joint_quat_spline))
+
+  #     # Normalize quaternions to ensure unit norm
+  #     norms = np.linalg.norm(smoothed_joint_quats, axis=0)
+  #     qpos[quat_start_idx:quat_end_idx, :] = smoothed_joint_quats / norms
+
 
   frame_pts = []
   obj_frame_pts = []

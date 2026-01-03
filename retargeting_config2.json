@@ -40,7 +40,7 @@
   "new_start_pos_shift": [-0.23, 0.18, 0],
   "end_final_pos_shift": [0.85, 0.18, 0.52],
   "end_obj_pos_shift": [0, 0, 0.2],
-  "waypts": [[[-0.2, 0, 0.0], 0.4, 0.2], [[0, 0, 0.1], 0.5, 0.4], [[0.3, 0, 0], 0.7, 0.6]],
+  "waypts": [[[-0.2, 0, 0.0], 0.4, 0.2], [[0, 0, 0.1], 0.5, 0.4], [[0.1, 0, 0.2], 0.6, 0.65, [0, 90, 0]], [[0.3, 0, 0.1], 0.7, 0.8]],
   "extra_pt_count": 20,
   "optimization_device": "cpu",
   "object_mesh_file": "/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj"
