@@ -11,6 +11,11 @@ import torch
 
 import xml.etree.cElementTree as ET
 
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend to avoid conflicts with MuJoCo viewer
+import matplotlib.pyplot as plt
+from scipy.signal import savgol_filter
+
 from parse_splines import *
 from trajectory import *
 from generate_barrier import *
@@ -633,47 +638,138 @@ if __name__ == "__main__":
 
 
   # Smooth hand trajectory
-  smoothing_factor = 0.01
-  joint_smoothing_factor = 0.001
+  # window_length must be odd and >= polyorder+2
+  window_length = 21  # must be odd, smaller = less smoothing
+  polyorder = 3  # Polynomial order (typically 2-5)
 
-  # Smooth translation
-  trans_spline, _ = create_smoothing_bspline(qpos[:3, :].T, parameterization="uniform", smoothing_factor=smoothing_factor)
-  times = np.linspace(0, 1, frames)
-  qpos[:3, :] = np.array(scipy.interpolate.splev(times, trans_spline))
+  # Store original values before smoothing for visualization
+  original_translation = qpos[:3, :].copy()
 
-  # Smooth wrist rotation via euler angles
+  # Smooth translation using Savitzky-Golay filter
+  if frames > window_length:
+    for i in range(3):
+      qpos[i, :] = savgol_filter(qpos[i, :], window_length, polyorder)
+
+  # Store smoothed values
+  smoothed_translation = qpos[:3, :].copy()
+
+  # Smooth wrist rotation using quaternion averaging
   wrist_quats = qpos[3:7, :].T  # (frames, 4)
-  wrist_rotations = R.from_quat(wrist_quats)
-  wrist_euler = wrist_rotations.as_euler('xyz')  # (frames, 3)
 
-  # Smooth euler angles with B-spline
-  wrist_euler_spline, _ = create_smoothing_bspline(wrist_euler, parameterization="uniform", smoothing_factor=smoothing_factor)
-  smoothed_wrist_euler = np.array(scipy.interpolate.splev(times, wrist_euler_spline)).T  # (frames, 3)
+  # Store original wrist euler angles for visualization
+  original_wrist_rotations = R.from_quat(wrist_quats)
+  original_wrist_euler = original_wrist_rotations.as_euler('xyz')
 
-  # Convert back to quaternions
-  smoothed_wrist_rotations = R.from_euler('xyz', smoothed_wrist_euler)
-  qpos[3:7, :] = smoothed_wrist_rotations.as_quat().T
+  # Smooth quaternions directly using moving window average
+  if frames > window_length:
+    smoothed_wrist_quats = smooth_quaternions(wrist_quats, window_length)
+  else:
+    smoothed_wrist_quats = wrist_quats.copy()
 
-  # Smooth finger joints with direct quaternion smoothing
-  # if AGENT == 'MANO_right' or AGENT == 'trajectories':
-  #   # MANO: qpos[7:] contains 16 finger joints as quaternions (60 values = 15 joints × 4)
-  #   # Smooth each joint's quaternion components directly and normalize
-  #   num_finger_joints = 15  # (51 - 3) / 3 = 16 euler joints -> 15 quaternion joints in qpos[7:67]
-  #   for joint_idx in range(num_finger_joints):
-  #     quat_start_idx = 7 + joint_idx * 4
-  #     quat_end_idx = quat_start_idx + 4
+  # Convert smoothed quaternions to euler for visualization
+  smoothed_wrist_rotations = R.from_quat(smoothed_wrist_quats)
+  smoothed_wrist_euler = smoothed_wrist_rotations.as_euler('xyz')
 
-  #     # Smooth quaternion components directly
-  #     joint_quat_spline, _ = create_smoothing_bspline(
-  #       qpos[quat_start_idx:quat_end_idx, :].T,
-  #       parameterization="uniform",
-  #       smoothing_factor=joint_smoothing_factor
-  #     )
-  #     smoothed_joint_quats = np.array(scipy.interpolate.splev(times, joint_quat_spline))
+  # Update qpos with smoothed quaternions
+  qpos[3:7, :] = smoothed_wrist_quats.T
 
-  #     # Normalize quaternions to ensure unit norm
-  #     norms = np.linalg.norm(smoothed_joint_quats, axis=0)
-  #     qpos[quat_start_idx:quat_end_idx, :] = smoothed_joint_quats / norms
+  times = np.linspace(0, 1, frames)
+
+  # Smooth finger joints using quaternion averaging
+  if AGENT == 'MANO_right' or AGENT == 'trajectories':
+    # MANO: qpos[7:] contains 16 finger joints as quaternions (60 values = 15 joints × 4)
+    num_finger_joints = 15  # (51 - 3) / 3 = 16 euler joints -> 15 quaternion joints in qpos[7:67]
+
+    # Store original finger joint data for visualization
+    original_finger_joints_euler = []
+    smoothed_finger_joints_euler = []
+
+    for joint_idx in range(num_finger_joints):
+      quat_start_idx = 7 + joint_idx * 4
+      quat_end_idx = quat_start_idx + 4
+
+      # Get original quaternions
+      original_joint_quats = qpos[quat_start_idx:quat_end_idx, :].T  # (frames, 4)
+
+      # Store original euler angles for visualization
+      original_rotations = R.from_quat(original_joint_quats)
+      original_euler = original_rotations.as_euler('xyz')
+      original_finger_joints_euler.append(original_euler)
+
+      # Smooth quaternions directly using moving window average
+      if frames > window_length:
+        smoothed_joint_quats = smooth_quaternions(original_joint_quats, window_length)
+      else:
+        smoothed_joint_quats = original_joint_quats.copy()
+
+      # Update qpos with smoothed quaternions
+      qpos[quat_start_idx:quat_end_idx, :] = smoothed_joint_quats.T
+
+      # Store smoothed euler angles for visualization
+      smoothed_rotations = R.from_quat(smoothed_joint_quats)
+      smoothed_euler = smoothed_rotations.as_euler('xyz')
+      smoothed_finger_joints_euler.append(smoothed_euler)
+
+
+  # Visualize smoothing effects for hand pose
+  fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+  fig.suptitle(f'Hand Pose Smoothing (Translation: Savgol window={window_length}, Rotation: Quat avg window={window_length})', fontsize=14)
+
+  # Plot translation components (x, y, z)
+  translation_labels = ['X Translation', 'Y Translation', 'Z Translation']
+  for i in range(3):
+    axes[0, i].plot(times, original_translation[i, :], 'b-', alpha=0.5, linewidth=2, label='Original')
+    axes[0, i].plot(times, smoothed_translation[i, :], 'r-', linewidth=2, label='Smoothed')
+    axes[0, i].set_xlabel('Time')
+    axes[0, i].set_ylabel('Distance (m)')
+    axes[0, i].set_title(translation_labels[i])
+    axes[0, i].legend()
+    axes[0, i].grid(True, alpha=0.3)
+
+  # Plot wrist rotation components (roll, pitch, yaw)
+  rotation_labels = ['Wrist Roll', 'Wrist Pitch', 'Wrist Yaw']
+  for i in range(3):
+    axes[1, i].plot(times, original_wrist_euler[:, i], 'b-', alpha=0.5, linewidth=2, label='Original')
+    axes[1, i].plot(times, smoothed_wrist_euler[:, i], 'r-', linewidth=2, label='Smoothed')
+    axes[1, i].set_xlabel('Time')
+    axes[1, i].set_ylabel('Angle (radians)')
+    axes[1, i].set_title(rotation_labels[i])
+    axes[1, i].legend()
+    axes[1, i].grid(True, alpha=0.3)
+
+  plt.tight_layout()
+  plt.savefig('smoothing_visualization_hand.png', dpi=150, bbox_inches='tight')
+  print(f"Hand pose smoothing visualization saved to smoothing_visualization_hand.png")
+  plt.close()
+
+  # Visualize finger joint smoothing (if available)
+  if AGENT == 'MANO_right' or AGENT == 'trajectories':
+    # Create plots for first 6 finger joints (2 rows x 3 cols)
+    # Each joint will show its 3 euler angle components
+    num_joints_to_plot = min(6, num_finger_joints)
+
+    fig, axes = plt.subplots(num_joints_to_plot, 3, figsize=(15, 3*num_joints_to_plot))
+    fig.suptitle(f'Finger Joint Smoothing (Quaternion averaging: window={window_length})', fontsize=16)
+
+    euler_labels = ['Roll', 'Pitch', 'Yaw']
+
+    for joint_idx in range(num_joints_to_plot):
+      for euler_idx in range(3):
+        ax = axes[joint_idx, euler_idx] if num_joints_to_plot > 1 else axes[euler_idx]
+        ax.plot(times, original_finger_joints_euler[joint_idx][:, euler_idx],
+                'b-', alpha=0.5, linewidth=2, label='Original')
+        ax.plot(times, smoothed_finger_joints_euler[joint_idx][:, euler_idx],
+                'r-', linewidth=2, label='Smoothed')
+        ax.set_xlabel('Time')
+        ax.set_ylabel('Angle (radians)')
+        ax.set_title(f'Joint {joint_idx} - {euler_labels[euler_idx]}')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig('smoothing_visualization_joints.png', dpi=150, bbox_inches='tight')
+    print(f"Finger joint smoothing visualization saved to smoothing_visualization_joints.png")
+    plt.close()
 
 
   frame_pts = []
