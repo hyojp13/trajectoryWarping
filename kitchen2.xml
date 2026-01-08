@@ -9,7 +9,7 @@
     <map znear="0.001"/>
   </visual>
 
-  <include file="tasks/flashlight_on.xml" />
+  <include file="tasks/object.xml" />
 	<include file="agents/MANO_right/assets.xml" />
 	<include file="agents/MANO_right/actuators.xml" />
 

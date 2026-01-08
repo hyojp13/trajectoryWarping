@@ -2,8 +2,6 @@ import numpy as np
 import scipy
 from trajectory import motionStartEnd
 
-import numpy as np
-
 def break_adjacent_duplicates(points, eps=1e-8):
     x = points[:, :3]
 
@@ -92,6 +90,9 @@ def create_smoothing_bspline(points, smoothing=None, degree=3, parameterization=
         else:
             assert(len(waypts_info) == 2)
             waypts_idx, final_waypt_timesteps = waypts_info
+
+            if waypts_idx is None:
+                waypts_idx = np.array([], dtype=int)
 
             # points, waypts_idx = remove_duplicate_points(points, waypts_idx)    # (n, 7)
             points = break_adjacent_duplicates(points)    # (n, 7)
@@ -187,3 +188,93 @@ def smooth_quaternions(quats, window_size):
         smoothed[i] = avg_quat / np.linalg.norm(avg_quat)
 
     return smoothed
+
+
+def create_quaternion_bspline(quats, waypts_info=None, smoothing_factor=0.001, degree=3):
+    """
+    Create a B-spline for quaternion data using proper quaternion interpolation.
+
+    Instead of treating quaternions as 4D vectors (which can cause strange rotations),
+    this function:
+    1. Ensures quaternions are in the same hemisphere
+    2. Uses scipy's splprep on the aligned quaternions
+    3. Re-normalizes sampled quaternions to ensure they remain unit quaternions
+
+    Args:
+        quats: (n, 4) array of quaternions in scipy format (x, y, z, w)
+        waypts_info: Optional tuple (waypts_idx, final_waypt_timesteps) for waypoint constraints
+        smoothing_factor: Smoothing parameter for splprep
+        degree: Degree of the B-spline
+
+    Returns:
+        spline: B-spline representation (output will be in same format as input)
+        t: Parameter values used for the spline
+    """
+    n = len(quats)
+
+    # Ensure all quaternions are in the same hemisphere to avoid discontinuities
+    aligned_quats = quats.copy()
+    for i in range(1, n):
+        if np.dot(aligned_quats[i], aligned_quats[i-1]) < 0:
+            aligned_quats[i] = -aligned_quats[i]
+
+    # Create parameterization - use the same logic as create_smoothing_bspline
+    # but applied to quaternion data
+    if waypts_info is None:
+        # Uniform parameterization
+        t = np.linspace(0, 1, n)
+    else:
+        waypts_idx, final_waypt_timesteps = waypts_info
+
+        if waypts_idx is None:
+            waypts_idx = np.array([], dtype=int)
+
+        # Break adjacent duplicates in quaternion space to avoid issues with splprep
+        # Check for identical quaternions
+        eps = 1e-8
+        for i in range(1, len(aligned_quats)):
+            if np.allclose(aligned_quats[i], aligned_quats[i-1], atol=eps):
+                # Add tiny perturbation
+                aligned_quats[i] += eps * np.array([1.0, 0.0, 0.0, 0.0])
+                aligned_quats[i] /= np.linalg.norm(aligned_quats[i])
+
+        # Add ending point
+        waypts_idx = np.append(waypts_idx, len(aligned_quats))
+        final_waypt_timesteps = np.append(final_waypt_timesteps, 1.0)
+
+        t = np.zeros(len(aligned_quats))
+
+        prev_timestep = 0
+        for i in range(waypts_idx.shape[0]):
+            start_idx = 0 if i == 0 else waypts_idx[i-1]
+            end_idx = waypts_idx[i]
+
+            # Compute chord length for this segment
+            segment = aligned_quats[start_idx:end_idx]
+            if len(segment) > 1:
+                diffs = segment[1:] - segment[:-1]
+                distances = np.sqrt(np.sum(diffs**2, axis=1))
+                cumulative = np.concatenate(([0], np.cumsum(distances)))
+
+                if cumulative[-1] > 0:
+                    t_section = cumulative / cumulative[-1]
+                else:
+                    t_section = np.linspace(0, 1, len(segment))
+            else:
+                t_section = np.array([0])
+
+            eps = 0.001
+            t_section = t_section * (final_waypt_timesteps[i] - prev_timestep - eps) + prev_timestep
+            t[start_idx:end_idx] = t_section
+            prev_timestep = final_waypt_timesteps[i]
+
+    # Ensure t is strictly increasing (required by splprep)
+    for i in range(1, len(t)):
+        if t[i] <= t[i-1]:
+            t[i] = t[i-1] + 1e-10
+
+    # Create B-spline using aligned quaternions
+    quats_list = [aligned_quats[:, i] for i in range(4)]
+    spline, u = scipy.interpolate.splprep(quats_list, u=t, s=smoothing_factor, k=degree)
+
+    return spline, t

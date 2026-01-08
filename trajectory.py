@@ -6,6 +6,7 @@ from sklearn.mixture import GaussianMixture
 from scipy.optimize import minimize
 from scipy.optimize import root_scalar
 from scipy.spatial.transform import Rotation as R
+import scipy.spatial.transform
 
 '''def transformSplines(splines, new_start, new_end):
     pos_count = splines[0].c.shape[0]
@@ -83,51 +84,51 @@ from scipy.spatial.transform import Rotation as R
 
     return splines'''
 
-def transformSplines(coordinates, new_start, new_end):
+def transformSplines(coordinates, new_start, new_end, distance_threshold=0.2):
+    """
+    Transform trajectory to pass through new start and end waypoints.
+    Uses adaptive blending: preserves trajectory shape when waypoints are close,
+    takes more direct path when waypoints are far from original trajectory.
+
+    Args:
+        coordinates: trajectory points, shape (3, n_points)
+        new_start: target start position (3,)
+        new_end: target end position (3,)
+        distance_threshold: distance beyond which to use more direct interpolation (default: 0.2)
+    """
     start_shift = new_start - coordinates[:, 0]
     end_shift = new_end - coordinates[:, coordinates.shape[1]-1]
 
+    n_points = coordinates.shape[1]
 
-    # determine when hand moves object
-    # start_frame = 0
-    # for i in range(0, coordinates.shape[1]):
-    #     #print(np.linalg.norm(coordinates[:, 0] - coordinates[:, i]))
-    #     if np.linalg.norm(coordinates[:, 0] - coordinates[:, i]) < 0.01:
-    #         start_frame += 1
-    #     else:
-    #         break
+    # Measure how far the waypoint shift is
+    start_distance = np.linalg.norm(start_shift)
+    end_distance = np.linalg.norm(end_shift)
+    max_distance = max(start_distance, end_distance)
 
-    # # determine when hand stops moving object
-    # end_frame = start_frame + 1
-    # for i in range(end_frame, coordinates.shape[1]):
-    #     if np.linalg.norm(coordinates[:, coordinates.shape[1]-1] - coordinates[:, i]) > 0.02:
-    #         end_frame += 1
-    #     else:
-    #         break
+    # Compute blend factor: 0 = preserve original shape, 1 = take direct path
+    # When distance < threshold, blend_factor ≈ 0 (preserve shape)
+    # When distance > threshold, blend_factor → 1 (more direct)
+    blend_factor = np.clip(max_distance / distance_threshold, 0.0, 1.0)
+    blend_factor = blend_factor ** 0.5  # Smooth transition curve
 
-    #print(start_frame, end_frame)
-    start_frame = 0
-    end_frame = coordinates.shape[1]
+    # For each point, compute both strategies and blend between them
+    for i in range(n_points):
+        t = i / (n_points - 1)  # Normalized time parameter [0, 1]
 
+        # Strategy 1: Quadratic blending (preserves trajectory shape)
+        weight_start_quad = (1 - t) ** 2
+        weight_end_quad = t ** 2
+        shift_quad = weight_start_quad * start_shift + weight_end_quad * end_shift
 
-    # shift frames before start_frame
-    # for i in range(0, start_frame):
-    #     coordinates[:, i] += start_shift
+        # Strategy 2: Linear interpolation (more direct path)
+        shift_linear = (1 - t) * start_shift + t * end_shift
 
-    # shift frames after end_frame
-    # for i in range(end_frame, coordinates.shape[1]):
-    #     coordinates[:, i] += end_shift
+        # Adaptive blend between the two strategies
+        shift_adaptive = (1 - blend_factor) * shift_quad + blend_factor * shift_linear
 
-    # shift frames between start and end frames by object_shift * weight
-    # print("start/end:", start_frame, end_frame)
-    # print("start/end pos:", coordinates[:, 0], coordinates[:, -1])
-    for i in range(start_frame, end_frame):
-        weight = (1 - (i - start_frame) / (end_frame - start_frame))**2
-        coordinates[:, i] += weight * start_shift
+        coordinates[:, i] += shift_adaptive
 
-        weight = ((i - start_frame) / (end_frame - start_frame))**2
-        coordinates[:, i] += weight * end_shift
-    
     return coordinates
 
 
@@ -680,3 +681,93 @@ def update_wrist(object_old, object_new, hand):
     #     hand_new[3:7, i] = y
 
     return hand_new
+
+
+def apply_waypoint_rotations(object_qpos_rotation, waypts, waypts_idx, startIdx, frames):
+    """
+    Apply rotations specified in waypoints to object quaternions.
+
+    Args:
+        object_qpos_rotation: Initial quaternions, shape [4, frames] in MuJoCo format [w, x, y, z]
+        waypts: List of waypoints, each can be (pos, t1, t2) or (pos, t1, t2, rotation)
+                where rotation is [rx, ry, rz] in degrees
+        waypts_idx: Array of frame indices corresponding to each waypoint
+        startIdx: Frame index where contact starts
+        frames: Total number of frames
+
+    Returns:
+        object_rotation_qpos: Rotated quaternions, shape [4, frames] in MuJoCo format [w, x, y, z]
+    """
+    # Create a copy to avoid modifying the input
+    object_rotation_qpos = object_qpos_rotation.copy()
+
+    assert object_qpos_rotation.shape[0] == 4
+
+    # Track total rotation applied so far
+    cumulative_rotation = R.identity()
+
+    for i, waypt in enumerate(waypts):
+        if len(waypt) == 4:  # Has rotation component
+            rotation_deg = waypt[3]  # [rx, ry, rz] in degrees
+            print("Rotating by", rotation_deg)
+
+            # Rotation happens FROM previous waypoint TO current waypoint
+            # So if waypoint i has rotation, we rotate from waypoint i-1 to waypoint i
+            if i == 0:
+                # Waypoint 0 has rotation: rotate from contact start to waypoint 0
+                start_frame_idx = startIdx
+            else:
+                # Waypoint i has rotation: rotate from waypoint i-1 to waypoint i
+                start_frame_idx = waypts_idx[i-1]
+
+            end_frame_idx = waypts_idx[i]
+
+            # Create the incremental rotation for this segment
+            segment_rotation = R.from_euler('xyz', rotation_deg, degrees=True)
+
+            # Apply rotation gradually from start_frame_idx to end_frame_idx
+            num_frames = end_frame_idx - start_frame_idx
+            if num_frames > 0:
+                # Get the starting orientation at the start of this segment
+                start_quat = object_rotation_qpos[:, start_frame_idx]  # [w, x, y, z]
+                start_quat_scipy = np.array([start_quat[1], start_quat[2], start_quat[3], start_quat[0]])
+                start_orientation = R.from_quat(start_quat_scipy)
+
+                # Compute the target orientation at the end of this segment
+                target_orientation = segment_rotation * start_orientation
+
+                # Linearly interpolate (slerp) between start and target
+                key_times = [0, 1]
+                key_rots = R.from_quat([start_orientation.as_quat(), target_orientation.as_quat()])
+                slerp = scipy.spatial.transform.Slerp(key_times, key_rots)
+
+                for frame_offset in range(num_frames + 1):
+                    frame_idx = start_frame_idx + frame_offset
+                    t = frame_offset / num_frames
+
+                    # Interpolate rotation
+                    interpolated_orientation = slerp(t)
+
+                    # Convert back to MuJoCo format [w, x, y, z]
+                    new_quat_scipy = interpolated_orientation.as_quat()  # [x, y, z, w]
+                    object_rotation_qpos[:, frame_idx] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])
+
+            # Update cumulative rotation
+            cumulative_rotation = segment_rotation * cumulative_rotation
+
+    # Apply cumulative rotation to all frames after the LAST waypoint
+    # (not after each waypoint, which would cause snapping)
+    last_waypoint_idx = waypts_idx[-1] if len(waypts) > 0 else startIdx
+    for frame_idx in range(last_waypoint_idx + 1, frames):
+        current_quat = object_rotation_qpos[:, frame_idx]  # [w, x, y, z]
+        current_quat_scipy = np.array([current_quat[1], current_quat[2], current_quat[3], current_quat[0]])
+        current_rot = R.from_quat(current_quat_scipy)
+
+        # Apply cumulative rotation
+        new_rot = cumulative_rotation * current_rot
+
+        # Convert back to MuJoCo format [w, x, y, z]
+        new_quat_scipy = new_rot.as_quat()  # [x, y, z, w]
+        object_rotation_qpos[:, frame_idx] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])
+
+    return object_rotation_qpos

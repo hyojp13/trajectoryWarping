@@ -33,7 +33,7 @@
     ]
   ],
   "learning_rate": 0.01,
-  "n_iter": 10,
+  "n_iter": 1,
   "first_frame_iter": 200,
   "boundary_radius": 0.1,
   "hand_boundary_radius": 0.1,
@@ -43,5 +43,6 @@
   "waypts": [[[-0.2, 0, 0.0], 0.4, 0.2], [[0, 0, 0.1], 0.5, 0.4], [[0.3, 0, 0], 0.7, 0.6]],
   "extra_pt_count": 20,
   "optimization_device": "cpu",
-  "object_mesh_file": "/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj"
+  "object_mesh_file": "/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj",
+  "rotation": [0, 0, 146.441]
 }
