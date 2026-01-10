@@ -206,31 +206,6 @@ def moveToEndPt(trajectoryFile, endpt, n=10):
 
 def barrierConstraints(pts, object_radius, barriers, endObj=None, traj_path = "scene/curve_positions.obj"):
     save_obj(pts, traj_path)
-    save_obj(pts, traj_path[:-4] + "temp.obj")
-
-    # if traj_path == "scene/hand_end_positions.obj":
-        # return
-    
-    scene_file = 'curve curve_positions.obj\n'
-    scene_file += 'repel_curve\n'
-    scene_file += 'fix_endpoint_vertices\n'
-    #scene_file += 'fix_special_tangents\n'
-    #scene_file += 'repel_plane 0 ' + str(floor_height-0.05) + ' 0 0 1 0\n'
-    scene_file += 'fix_length\n'
-
-
-    for i, barrier in enumerate(barriers):
-        if not isinstance(barrier, str):
-            barr_type, config = barrier
-            name = 'barrier' + str(i) + '.obj'
-            path = "scene/" + name
-            scene_file += 'repel_surface ' + name + '\n'
-
-    # scene_file += 'fix_length'
-    f = open("scene/temp.txt", "w")
-    f.write(scene_file)
-    f.close()
-
 
     for i, barrier in enumerate(barriers):
         if not isinstance(barrier, str):
@@ -243,11 +218,7 @@ def barrierConstraints(pts, object_radius, barriers, endObj=None, traj_path = "s
             minkowski_sum_convex_ball(path, object_radius)
 
 
-        
-
-        # create_obj(splines, traj_path[:-4] + "_dense.obj", resolution = 10000)
         intersectionCount = trajectoryBarrierIntersectionCount(traj_path, path)
-        # print(intersectionCount)
 
         # no preprocessing needed, object does not intersect with trajectory
         if intersectionCount == 0:

@@ -1,5 +1,7 @@
 import numpy as np
 import scipy
+from scipy.spatial.transform import Rotation as R
+from scipy.signal import savgol_filter
 from trajectory import motionStartEnd
 
 def break_adjacent_duplicates(points, eps=1e-8):
@@ -278,3 +280,162 @@ def create_quaternion_bspline(quats, waypts_info=None, smoothing_factor=0.001, d
     spline, u = scipy.interpolate.splprep(quats_list, u=t, s=smoothing_factor, k=degree)
 
     return spline, t
+
+
+def smooth_hand_trajectory(qpos, frames, AGENT, window_length=21, polyorder=3, visualize=False):
+    """
+    Smooth hand trajectory including translation, wrist rotation, and finger joints.
+
+    Args:
+        qpos: Hand pose data array
+        frames: Number of frames
+        AGENT: Agent type ('MANO_right', 'trajectories', 'Allegro_right', etc.)
+        window_length: Window length for smoothing (must be odd and >= polyorder+2)
+        polyorder: Polynomial order for Savitzky-Golay filter (typically 2-5)
+        visualize: If True, generate visualization plots (default: False)
+
+    Returns:
+        qpos: Smoothed hand pose data
+    """
+    # Store original values before smoothing for visualization
+    if visualize:
+        original_translation = qpos[:3, :].copy()
+
+    # Smooth translation using Savitzky-Golay filter
+    if frames > window_length:
+        for i in range(3):
+            qpos[i, :] = savgol_filter(qpos[i, :], window_length, polyorder)
+
+    # Store smoothed values
+    if visualize:
+        smoothed_translation = qpos[:3, :].copy()
+
+    # Smooth wrist rotation using quaternion averaging
+    wrist_quats = qpos[3:7, :].T  # (frames, 4)
+
+    # Store original wrist euler angles for visualization
+    if visualize:
+        original_wrist_rotations = R.from_quat(wrist_quats)
+        original_wrist_euler = original_wrist_rotations.as_euler('xyz')
+
+    # Smooth quaternions directly using moving window average
+    if frames > window_length:
+        smoothed_wrist_quats = smooth_quaternions(wrist_quats, window_length)
+    else:
+        smoothed_wrist_quats = wrist_quats.copy()
+
+    # Convert smoothed quaternions to euler for visualization
+    if visualize:
+        smoothed_wrist_rotations = R.from_quat(smoothed_wrist_quats)
+        smoothed_wrist_euler = smoothed_wrist_rotations.as_euler('xyz')
+
+    # Update qpos with smoothed quaternions
+    qpos[3:7, :] = smoothed_wrist_quats.T
+
+    times = np.linspace(0, 1, frames)
+
+    # Smooth finger joints using quaternion averaging
+    if AGENT == 'MANO_right' or AGENT == 'trajectories':
+        # MANO: qpos[7:] contains 16 finger joints as quaternions (60 values = 15 joints × 4)
+        num_finger_joints = 15  # (51 - 3) / 3 = 16 euler joints -> 15 quaternion joints in qpos[7:67]
+
+        # Store original finger joint data for visualization
+        if visualize:
+            original_finger_joints_euler = []
+            smoothed_finger_joints_euler = []
+
+        for joint_idx in range(num_finger_joints):
+            quat_start_idx = 7 + joint_idx * 4
+            quat_end_idx = quat_start_idx + 4
+
+            # Get original quaternions
+            original_joint_quats = qpos[quat_start_idx:quat_end_idx, :].T  # (frames, 4)
+
+            # Store original euler angles for visualization
+            if visualize:
+                original_rotations = R.from_quat(original_joint_quats)
+                original_euler = original_rotations.as_euler('xyz')
+                original_finger_joints_euler.append(original_euler)
+
+            # Smooth quaternions directly using moving window average
+            if frames > window_length:
+                smoothed_joint_quats = smooth_quaternions(original_joint_quats, window_length)
+            else:
+                smoothed_joint_quats = original_joint_quats.copy()
+
+            # Update qpos with smoothed quaternions
+            qpos[quat_start_idx:quat_end_idx, :] = smoothed_joint_quats.T
+
+            # Store smoothed euler angles for visualization
+            if visualize:
+                smoothed_rotations = R.from_quat(smoothed_joint_quats)
+                smoothed_euler = smoothed_rotations.as_euler('xyz')
+                smoothed_finger_joints_euler.append(smoothed_euler)
+
+    # Generate visualizations if requested
+    if visualize:
+        import matplotlib
+        matplotlib.use('Agg')  # avoids conflicts with MuJoCo viewer
+        import matplotlib.pyplot as plt
+
+        # Visualize smoothing effects for hand pose
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        fig.suptitle(f'Hand Pose Smoothing (Translation: Savgol window={window_length}, Rotation: Quat avg window={window_length})', fontsize=14)
+
+        # Plot translation components (x, y, z)
+        translation_labels = ['X Translation', 'Y Translation', 'Z Translation']
+        for i in range(3):
+            axes[0, i].plot(times, original_translation[i, :], 'b-', alpha=0.5, linewidth=2, label='Original')
+            axes[0, i].plot(times, smoothed_translation[i, :], 'r-', linewidth=2, label='Smoothed')
+            axes[0, i].set_xlabel('Time')
+            axes[0, i].set_ylabel('Distance (m)')
+            axes[0, i].set_title(translation_labels[i])
+            axes[0, i].legend()
+            axes[0, i].grid(True, alpha=0.3)
+
+        # Plot wrist rotation components (roll, pitch, yaw)
+        rotation_labels = ['Wrist Roll', 'Wrist Pitch', 'Wrist Yaw']
+        for i in range(3):
+            axes[1, i].plot(times, original_wrist_euler[:, i], 'b-', alpha=0.5, linewidth=2, label='Original')
+            axes[1, i].plot(times, smoothed_wrist_euler[:, i], 'r-', linewidth=2, label='Smoothed')
+            axes[1, i].set_xlabel('Time')
+            axes[1, i].set_ylabel('Angle (radians)')
+            axes[1, i].set_title(rotation_labels[i])
+            axes[1, i].legend()
+            axes[1, i].grid(True, alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig('smoothing_visualization_hand.png', dpi=150, bbox_inches='tight')
+        print(f"Hand pose smoothing visualization saved to smoothing_visualization_hand.png")
+        plt.close()
+
+        # Visualize finger joint smoothing (if available)
+        if AGENT == 'MANO_right' or AGENT == 'trajectories':
+            # Create plots for first 6 finger joints (2 rows x 3 cols)
+            # Each joint will show its 3 euler angle components
+            num_joints_to_plot = min(6, num_finger_joints)
+
+            fig, axes = plt.subplots(num_joints_to_plot, 3, figsize=(15, 3*num_joints_to_plot))
+            fig.suptitle(f'Finger Joint Smoothing (Quaternion averaging: window={window_length})', fontsize=16)
+
+            euler_labels = ['Roll', 'Pitch', 'Yaw']
+
+            for joint_idx in range(num_joints_to_plot):
+                for euler_idx in range(3):
+                    ax = axes[joint_idx, euler_idx] if num_joints_to_plot > 1 else axes[euler_idx]
+                    ax.plot(times, original_finger_joints_euler[joint_idx][:, euler_idx],
+                            'b-', alpha=0.5, linewidth=2, label='Original')
+                    ax.plot(times, smoothed_finger_joints_euler[joint_idx][:, euler_idx],
+                            'r-', linewidth=2, label='Smoothed')
+                    ax.set_xlabel('Time')
+                    ax.set_ylabel('Angle (radians)')
+                    ax.set_title(f'Joint {joint_idx} - {euler_labels[euler_idx]}')
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+
+            plt.tight_layout()
+            plt.savefig('smoothing_visualization_joints.png', dpi=150, bbox_inches='tight')
+            print(f"Finger joint smoothing visualization saved to smoothing_visualization_joints.png")
+            plt.close()
+
+    return qpos

@@ -1,11 +1,12 @@
 <mujoco>
-  <asset>
-    <mesh name="object_mesh" file="mug_pass_1_full_export_objectmesh.obj" scale="1 1 1"/>
-  </asset>
+    <asset>
+      <mesh name="object_mesh" file="mug_pass_1_full_export_objectmesh.obj" scale="1 1 1"/>
+    </asset>
 
-  <worldbody>
-    <body name="object" mocap="true">
-      <geom type="mesh" mesh="object_mesh" group="6" rgba="0.8 0.6 0.4 1" mass="0.1"/>
-    </body>
-  </worldbody>
-</mujoco>
+    <worldbody>
+      <body name="object" mocap="true">
+        <geom type="mesh" mesh="object_mesh" group="6" rgba="0.8 0.6 0.4 1" mass="0.1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  

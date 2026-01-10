@@ -1,20 +1,12 @@
 import time
 import argparse
 import json
-
 import mujoco
 import mujoco.viewer
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-
 import torch
-
 import xml.etree.cElementTree as ET
-
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend to avoid conflicts with MuJoCo viewer
-import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
 
 from parse_splines import *
 from trajectory import *
@@ -27,6 +19,7 @@ from differentiable_fk import *
 from optimize_contacts import *
 from load_contacts import *
 from differentiable_fk import *
+from contacts import *
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -163,17 +156,17 @@ if __name__ == "__main__":
   # Create object.xml with the correct mesh
   import os
   object_xml_content = f"""<mujoco>
-  <asset>
-    <mesh name="object_mesh" file="{os.path.basename(object_mesh_file)}" scale="1 1 1"/>
-  </asset>
+    <asset>
+      <mesh name="object_mesh" file="{os.path.basename(object_mesh_file)}" scale="1 1 1"/>
+    </asset>
 
-  <worldbody>
-    <body name="object" mocap="true">
-      <geom type="mesh" mesh="object_mesh" group="6" rgba="0.8 0.6 0.4 1" mass="0.1"/>
-    </body>
-  </worldbody>
-</mujoco>
-"""
+    <worldbody>
+      <body name="object" mocap="true">
+        <geom type="mesh" mesh="object_mesh" group="6" rgba="0.8 0.6 0.4 1" mass="0.1"/>
+      </body>
+    </worldbody>
+  </mujoco>
+  """
 
   with open('tasks/object.xml', 'w') as f:
     f.write(object_xml_content)
@@ -193,43 +186,12 @@ if __name__ == "__main__":
 
   objectSplinesOrig, _, _ = parseSplines('startingTrajectories/' + AGENT + '/' + TASK + '/object.smexp')
 
-  # add mesh barriers to MuJoCo
-  with open(scene_file) as f:
-    xml_string = f.read()
-
   # Convert barriers from config format to tuples
   barriers = [tuple(b) if isinstance(b, list) else b for b in barriers]
   barriers = process_barriers(barriers) # apply scale and pos to obj barriers
 
-  for i, barrier in enumerate(barriers):
-    if isinstance(barrier, str):
-      # Path to your .obj file
-      mesh_file = barrier.split('/')[1]
-      import os
-      print(os.path.abspath(mesh_file))
-
-
-      mesh_asset = f"""
-          <mesh name="mesh_{i}" file="{mesh_file}"/>
-      """
-
-      mesh_body = f"""
-          <body name="mesh_body" pos="0 0 0">
-              <geom type="mesh" mesh="mesh_{i}" rgba="0.2 0.8 0.2 1" group="2"/>
-          </body>
-      """
-
-      if "</asset>" in xml_string:
-        xml_string = xml_string.replace("</asset>", mesh_asset + "\n</asset>")
-      else:
-          raise ValueError("No <asset> block found in XML.")
-
-      # Inject body into <worldbody> block (before </worldbody>)
-      if "</worldbody>" in xml_string:
-          xml_string = xml_string.replace("</worldbody>", mesh_body + "\n</worldbody>")
-      else:
-          raise ValueError("No <worldbody> block found in XML.")
-
+  # add mesh barriers to MuJoCo
+  xml_string = add_mesh_barriers_to_xml(scene_file, barriers)
 
   object = trimesh.load(object_mesh_file, process=False)
 
@@ -243,76 +205,9 @@ if __name__ == "__main__":
   m.opt.timestep = 2*seconds/frames
 
   # load hand and object contacts from contacts_lcexp
-  hand_contacts = {}  # per hand component, each contains a list of contacts per frame
   hand_components_len = 16
   hand_component_offset = 2  # starting index of body_id for hand components in mujoco model
-  for i in range(hand_components_len):
-    hand_contacts[i] = [None] * frames
-  
-  object_contacts = [None] * frames
-  
-  # Convert contacts from .lcexp format to playTrajectory format
-  for frame_idx in range(frames):
-    frame_contacts = contacts_lcexp[frame_idx]  # List of (obj_vertex, hand_link_idx, (face_idx, bary1, bary2, bary3))
-    
-    if len(frame_contacts) == 0:
-      object_contacts[frame_idx] = np.array([], dtype=np.int64)
-      continue
-    
-    # Extract object vertex indices for this frame
-    obj_vertex_indices = []
-    for contact in frame_contacts:
-      obj_vertex_idx = contact[0]
-      obj_vertex_indices.append(obj_vertex_idx)
-    
-    object_contacts[frame_idx] = np.array(obj_vertex_indices, dtype=np.int64)
-    
-    # Create mapping from object vertex index to index in object_contacts array
-    obj_vertex_to_idx = {v: i for i, v in enumerate(obj_vertex_indices)}
-    
-    # Group contacts by hand component
-    contacts_by_component = {}
-    for contact in frame_contacts:
-      obj_vertex_idx, hand_link_idx, hand_contact_info = contact
-      face_idx, bary1, bary2, bary3 = hand_contact_info
-      
-      hand_component_id = hand_link_idx
-      
-      if hand_component_id < 0 or hand_component_id >= hand_components_len:
-        raise Exception("Hand component id is out of range at frame " + str(frame_idx))
-      
-      # Get object_contact_idx (index into object_contacts[frame_idx])
-      object_contact_idx = obj_vertex_to_idx[obj_vertex_idx]
-      
-      contact_tuple = (face_idx, (bary1, bary2, bary3), object_contact_idx)
-      
-      if hand_component_id not in contacts_by_component:
-        contacts_by_component[hand_component_id] = []
-      contacts_by_component[hand_component_id].append(contact_tuple)
-    
-    # Assign to hand_contacts
-    for hand_component_id in contacts_by_component:
-      hand_contacts[hand_component_id][frame_idx] = contacts_by_component[hand_component_id]
-
-  # check that all frames have all object contacts covered
-  for i in range(frames):
-    contact_count = len(object_contacts[i])
-    contact_checker = [False] * contact_count
-
-    hand_contact_count = 0
-    for j in range(hand_components_len):
-      component_contacts = hand_contacts[j][i]
-      if component_contacts is None:
-        continue
-      for k in component_contacts:
-        contact_checker[k[2]] = True
-        hand_contact_count += 1
-    
-    if False in contact_checker:
-      raise Exception("Missing contact at frame " + str(i))
-    if hand_contact_count > contact_count:
-      raise Exception("More hand contact count than object contact count at frame " + str(i))
-
+  hand_contacts, object_contacts = process_contacts(contacts_lcexp, hand_components_len)
 
   # correct barrier axes (issue due to using repulsive curves previously)
   barrier = correct_barrier_axes(barriers)
@@ -338,7 +233,7 @@ if __name__ == "__main__":
   qpos_copy = qpos.copy()
 
   object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
-  object_qpos_copy = object_qpos.copy()
+  # object_qpos_copy = object_qpos.copy()
 
 
 
@@ -372,8 +267,9 @@ if __name__ == "__main__":
       waypts_processed.append((waypt_pos, waypt[1], waypt[2]))
   waypts = waypts_processed
 
-  pos_waypt_constrained, _, _, waypts_idx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
+
   # pos_waypt_constrained: (3, frames)
+  pos_waypt_constrained, _, _, waypts_idx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
 
   # Apply rotations at waypoints if specified
   # Rotations are applied gradually from the previous waypoint (or contact start) to current waypoint
@@ -411,33 +307,28 @@ if __name__ == "__main__":
     moveToEndPt("scene/curve_positions.obj", endFinalPos, extra_pt_count)
     trajectory = read_obj("scene/curve_positions.obj")
   else:
-    # If trajectory already ends at final position, set extra_pt_count to 0
     extra_pt_count = 0
   
-  # print(trajectory.shape)
 
-  # object_qpos[:3, :] = trajectory
-
+  # new object polyline after barrier and waypoints constraints (entire polyline considered "contact" trajectory)
+  # new_object_qpos: # (7, n+extra)
   new_object_qpos = np.zeros((object_qpos.shape[0], object_qpos.shape[1] + extra_pt_count))
   new_object_qpos[:3, :] = trajectory.T
   new_object_qpos[3:, :object_qpos.shape[1]] = object_rotation_qpos
   if extra_pt_count != 0:
     new_object_qpos[3:, -extra_pt_count:] = new_object_qpos[3:, -extra_pt_count-1].reshape(object_qpos.shape[0]-3, 1)
 
-  # print(new_object_qpos.shape)  # (7, n+extra)
 
-  # assert new_object_qpos[:3, waypts_idx[i]]) is close to waypts_idx[i] for all i
-
+  # convert to bspline
   final_waypt_timesteps = np.array([w[2] for w in waypts])  # (waypts, )
 
   # Create separate splines for position and quaternion to avoid coupling
-  # Position spline (using only xyz, not affected by rotation)
   pos_spline, contact_timewarp = create_smoothing_bspline(new_object_qpos[:3, :].T, parameterization="waypts", waypts_info=(waypts_idx, final_waypt_timesteps))
 
   # contact_timewarp: (frames + extra_pt_count,): [0, 1] -> [0, 1]
   # all points in timewarp are DURING contact only, ie. 0 -> first contact
 
-  # Quaternion spline (using proper quaternion interpolation to avoid strange rotations)
+  # Quaternion spline
   # Convert from MuJoCo format [w,x,y,z] to scipy format [x,y,z,w] for processing
   quat_mujoco = new_object_qpos[3:7, :].T  # (n, 4) in [w,x,y,z] format
   quat_scipy = np.column_stack([quat_mujoco[:, 1:4], quat_mujoco[:, 0]])  # Convert to [x,y,z,w]
@@ -446,18 +337,15 @@ if __name__ == "__main__":
 
   retargeted_sim_time = np.linspace(0, 1, contact_frame_count)
 
-  # Sample position and quaternion separately
   retargeted_pos = np.array(scipy.interpolate.splev(retargeted_sim_time, pos_spline)).T
   retargeted_quat_scipy = np.array(scipy.interpolate.splev(retargeted_sim_time, quat_spline)).T  # (n, 4) in [x,y,z,w]
 
-  # Normalize quaternions to ensure they remain unit quaternions (valid rotations)
-  # This is critical because B-spline interpolation can produce non-unit quaternions
+  # Normalize quaternions
   retargeted_quat_scipy_normalized = retargeted_quat_scipy / np.linalg.norm(retargeted_quat_scipy, axis=1, keepdims=True)
-
   # Convert back to MuJoCo format [w,x,y,z]
   retargeted_quat_mujoco = np.column_stack([retargeted_quat_scipy_normalized[:, 3], retargeted_quat_scipy_normalized[:, 0:3]])
 
-  # Combine them
+  # Combine position and rotation splines
   retargeted_spline_pos = np.hstack([retargeted_pos, retargeted_quat_mujoco])
 
   # add points for the position before and after contact
@@ -479,7 +367,6 @@ if __name__ == "__main__":
   for j in range(hand_components_len):
     hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
 
-  ######## TODO: check endpoints #######
   # contact_timewarp: (frames + extra_pt_count,)
   # [0, 1] -> [0, 1] where the indices are progressing linearly from 0 to 1, and each index contains an output in [0,1]
   # all points in timewarp are during "contact" only, but this actually includes the non contact ranges as all frames are taken as contact
@@ -501,7 +388,6 @@ if __name__ == "__main__":
 
     print(frame, "/", contact_frame_count, ":", closet_original_frame, start_frame_count, frames+extra_pt_count)
     if closet_original_frame > endIdx:  # maps to final entering frames
-      print("found frame maps to final entering frames")
       closet_original_frame = endIdx
 
     # Pre-compute local hand contacts for this frame (cached across optimization iterations)
@@ -580,7 +466,6 @@ if __name__ == "__main__":
   retargeted_start_spline, _ = create_smoothing_bspline(retargeted_start_trajectory, parameterization="uniform")
   retargeted_sim_time = np.linspace(0, 1, start_frame_count)
   qpos[:3, :start_frame_count] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_start_spline))
-  # qpos[:3, :start_frame_count] = retargeted_start_trajectory.T
 
 
   # retarget hand after contact
@@ -591,177 +476,39 @@ if __name__ == "__main__":
   obj[:, 2] = np.maximum(obj[:, 2], start_pos[2])
   save_obj(obj, "scene/hand_end_positions.obj")
 
-
   retargeted_end_trajectory = read_obj("scene/hand_end_positions.obj")
   retargeted_end_spline, _ = create_smoothing_bspline(retargeted_end_trajectory, parameterization="uniform")
   retargeted_sim_time = np.linspace(0, 1, end_frame_count)
   qpos[:3, -end_frame_count:] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_end_spline))
-  # qpos[:3, -end_frame_count:] = retargeted_end_trajectory.T
-
 
   # Smooth hand trajectory
-  # window_length must be odd and >= polyorder+2
-  window_length = 21  # must be odd, smaller = less smoothing
-  polyorder = 3  # Polynomial order (typically 2-5)
-
-  # Store original values before smoothing for visualization
-  original_translation = qpos[:3, :].copy()
-
-  # Smooth translation using Savitzky-Golay filter
-  if frames > window_length:
-    for i in range(3):
-      qpos[i, :] = savgol_filter(qpos[i, :], window_length, polyorder)
-
-  # Store smoothed values
-  smoothed_translation = qpos[:3, :].copy()
-
-  # Smooth wrist rotation using quaternion averaging
-  wrist_quats = qpos[3:7, :].T  # (frames, 4)
-
-  # Store original wrist euler angles for visualization
-  original_wrist_rotations = R.from_quat(wrist_quats)
-  original_wrist_euler = original_wrist_rotations.as_euler('xyz')
-
-  # Smooth quaternions directly using moving window average
-  if frames > window_length:
-    smoothed_wrist_quats = smooth_quaternions(wrist_quats, window_length)
-  else:
-    smoothed_wrist_quats = wrist_quats.copy()
-
-  # Convert smoothed quaternions to euler for visualization
-  smoothed_wrist_rotations = R.from_quat(smoothed_wrist_quats)
-  smoothed_wrist_euler = smoothed_wrist_rotations.as_euler('xyz')
-
-  # Update qpos with smoothed quaternions
-  qpos[3:7, :] = smoothed_wrist_quats.T
-
-  times = np.linspace(0, 1, frames)
-
-  # Smooth finger joints using quaternion averaging
-  if AGENT == 'MANO_right' or AGENT == 'trajectories':
-    # MANO: qpos[7:] contains 16 finger joints as quaternions (60 values = 15 joints × 4)
-    num_finger_joints = 15  # (51 - 3) / 3 = 16 euler joints -> 15 quaternion joints in qpos[7:67]
-
-    # Store original finger joint data for visualization
-    original_finger_joints_euler = []
-    smoothed_finger_joints_euler = []
-
-    for joint_idx in range(num_finger_joints):
-      quat_start_idx = 7 + joint_idx * 4
-      quat_end_idx = quat_start_idx + 4
-
-      # Get original quaternions
-      original_joint_quats = qpos[quat_start_idx:quat_end_idx, :].T  # (frames, 4)
-
-      # Store original euler angles for visualization
-      original_rotations = R.from_quat(original_joint_quats)
-      original_euler = original_rotations.as_euler('xyz')
-      original_finger_joints_euler.append(original_euler)
-
-      # Smooth quaternions directly using moving window average
-      if frames > window_length:
-        smoothed_joint_quats = smooth_quaternions(original_joint_quats, window_length)
-      else:
-        smoothed_joint_quats = original_joint_quats.copy()
-
-      # Update qpos with smoothed quaternions
-      qpos[quat_start_idx:quat_end_idx, :] = smoothed_joint_quats.T
-
-      # Store smoothed euler angles for visualization
-      smoothed_rotations = R.from_quat(smoothed_joint_quats)
-      smoothed_euler = smoothed_rotations.as_euler('xyz')
-      smoothed_finger_joints_euler.append(smoothed_euler)
-
-
-  # Visualize smoothing effects for hand pose
-  fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-  fig.suptitle(f'Hand Pose Smoothing (Translation: Savgol window={window_length}, Rotation: Quat avg window={window_length})', fontsize=14)
-
-  # Plot translation components (x, y, z)
-  translation_labels = ['X Translation', 'Y Translation', 'Z Translation']
-  for i in range(3):
-    axes[0, i].plot(times, original_translation[i, :], 'b-', alpha=0.5, linewidth=2, label='Original')
-    axes[0, i].plot(times, smoothed_translation[i, :], 'r-', linewidth=2, label='Smoothed')
-    axes[0, i].set_xlabel('Time')
-    axes[0, i].set_ylabel('Distance (m)')
-    axes[0, i].set_title(translation_labels[i])
-    axes[0, i].legend()
-    axes[0, i].grid(True, alpha=0.3)
-
-  # Plot wrist rotation components (roll, pitch, yaw)
-  rotation_labels = ['Wrist Roll', 'Wrist Pitch', 'Wrist Yaw']
-  for i in range(3):
-    axes[1, i].plot(times, original_wrist_euler[:, i], 'b-', alpha=0.5, linewidth=2, label='Original')
-    axes[1, i].plot(times, smoothed_wrist_euler[:, i], 'r-', linewidth=2, label='Smoothed')
-    axes[1, i].set_xlabel('Time')
-    axes[1, i].set_ylabel('Angle (radians)')
-    axes[1, i].set_title(rotation_labels[i])
-    axes[1, i].legend()
-    axes[1, i].grid(True, alpha=0.3)
-
-  plt.tight_layout()
-  plt.savefig('smoothing_visualization_hand.png', dpi=150, bbox_inches='tight')
-  print(f"Hand pose smoothing visualization saved to smoothing_visualization_hand.png")
-  plt.close()
-
-  # Visualize finger joint smoothing (if available)
-  if AGENT == 'MANO_right' or AGENT == 'trajectories':
-    # Create plots for first 6 finger joints (2 rows x 3 cols)
-    # Each joint will show its 3 euler angle components
-    num_joints_to_plot = min(6, num_finger_joints)
-
-    fig, axes = plt.subplots(num_joints_to_plot, 3, figsize=(15, 3*num_joints_to_plot))
-    fig.suptitle(f'Finger Joint Smoothing (Quaternion averaging: window={window_length})', fontsize=16)
-
-    euler_labels = ['Roll', 'Pitch', 'Yaw']
-
-    for joint_idx in range(num_joints_to_plot):
-      for euler_idx in range(3):
-        ax = axes[joint_idx, euler_idx] if num_joints_to_plot > 1 else axes[euler_idx]
-        ax.plot(times, original_finger_joints_euler[joint_idx][:, euler_idx],
-                'b-', alpha=0.5, linewidth=2, label='Original')
-        ax.plot(times, smoothed_finger_joints_euler[joint_idx][:, euler_idx],
-                'r-', linewidth=2, label='Smoothed')
-        ax.set_xlabel('Time')
-        ax.set_ylabel('Angle (radians)')
-        ax.set_title(f'Joint {joint_idx} - {euler_labels[euler_idx]}')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig('smoothing_visualization_joints.png', dpi=150, bbox_inches='tight')
-    print(f"Finger joint smoothing visualization saved to smoothing_visualization_joints.png")
-    plt.close()
+  qpos = smooth_hand_trajectory(qpos, frames, AGENT, window_length=21, polyorder=3, visualize=False)
 
 
   frame_pts = []
-  obj_frame_pts = []
-  obj_orig_frame_pts = []
   obj_retarget_frame_pts = []
   
 
   with mujoco.viewer.launch_passive(m, d) as viewer:
     i = 0
     while viewer.is_running():
-
       step_start = time.time()
 
-      # update using only translation
-      #d.qpos[:3] = qpos[:3, i % frames]
+      if i % frames == 0:
+        frame_pts = []
+        obj_retarget_frame_pts = []
+        i = 0
 
-      d.qpos = qpos[:, i % frames]
-      d.mocap_pos = retargeted_spline_pos[i % frames, :3]
-      d.mocap_quat = retargeted_spline_pos[i % frames, 3:]
-      # d.mocap_pos = object_qpos_copy[:3, i % frames]
-      # d.mocap_quat = object_qpos_copy[3:, i % frames]
+      d.qpos = qpos[:, i]
+      d.mocap_pos = retargeted_spline_pos[i, :3]
+      d.mocap_quat = retargeted_spline_pos[i, 3:]
       mujoco.mj_forward(m, d)
-
 
       # process local hand contacts
       # local_hand_contacts: dict of hand component id -> list of local contact positions at frame i
       local_hand_contacts = {}
       for hand_component_id in range(hand_components_len):
-        contacts_this_frame = hand_contacts[hand_component_id][i % frames]
+        contacts_this_frame = hand_contacts[hand_component_id][i]
         if contacts_this_frame is not None:
           local_hand_contacts[hand_component_id] = []
           for contact in contacts_this_frame:
@@ -777,53 +524,12 @@ if __name__ == "__main__":
       rotation_matrix = rotation.as_matrix()
 
 
-      if i % frames == 0:
-        frame_pts = []
-        obj_frame_pts = []
-        obj_retarget_frame_pts = []
-        obj_orig_frame_pts = []
-        i = 0
-
-
-      frame_pts.append(qpos[:3, i % frames])
-      # obj_frame_pts.append(object_qpos[:3, i % frames])    # uncomment to visualize
-      obj_retarget_frame_pts.append(retargeted_spline_pos[i % frames, :3])
+      frame_pts.append(qpos[:3, i])
+      obj_retarget_frame_pts.append(retargeted_spline_pos[i, :3])
 
       geometry_count = 0
 
-      '''for j in range(len(frame_pts)):
-        mujoco.mjv_initGeom(
-            viewer.user_scn.geoms[j],
-            type=mujoco.mjtGeom.mjGEOM_SPHERE,
-            size=[0.005, 0, 0],
-            pos=np.array(frame_pts[j]),
-            mat=np.eye(3).flatten(),
-            rgba=np.array([1, 0, 0, 1])
-        )
-      geometry_count += len(frame_pts)'''
-
-      for j in range(len(obj_orig_frame_pts)):
-        mujoco.mjv_initGeom(
-            viewer.user_scn.geoms[j + geometry_count],
-            type=mujoco.mjtGeom.mjGEOM_SPHERE,
-            size=[0.005, 0, 0],
-            pos=np.array(obj_orig_frame_pts[j]),
-            mat=np.eye(3).flatten(),
-            rgba=np.array([1, j % frames / frames, 0, 1])
-        )
-      geometry_count += len(obj_orig_frame_pts)
-      
-      for j in range(len(obj_frame_pts)):
-        mujoco.mjv_initGeom(
-            viewer.user_scn.geoms[j + geometry_count],
-            type=mujoco.mjtGeom.mjGEOM_SPHERE,
-            size=[0.005, 0, 0],
-            pos=np.array(obj_frame_pts[j]),
-            mat=np.eye(3).flatten(),
-            rgba=np.array([0.5, j % frames / frames, 1, 1])
-        )
-      geometry_count += len(obj_frame_pts)
-
+      # object path color
       if len(obj_retarget_frame_pts) <= start_frame_count:
         rgba = np.array([0, 0, 1, 1])
       elif len(obj_retarget_frame_pts) <= start_frame_count+contact_frame_count:
@@ -831,11 +537,7 @@ if __name__ == "__main__":
       else:
         rgba = np.array([1, 0, 0, 1])
 
-      if len(obj_retarget_frame_pts) == start_frame_count+1:
-        print("Contact start point: ", frame_pts[-1])
-      if len(obj_retarget_frame_pts) == start_frame_count+contact_frame_count+1:
-        print("End start point: ", frame_pts[-1])
-
+      # object path
       for j in range(len(obj_retarget_frame_pts)):
         mujoco.mjv_initGeom(
             viewer.user_scn.geoms[j + geometry_count],
@@ -875,7 +577,7 @@ if __name__ == "__main__":
           viewer.user_scn.geoms[geometry_count],
           type=mujoco.mjtGeom.mjGEOM_SPHERE,
           size=[boundary_radius, 0, 0],
-          pos=np.array(obj_retarget_frame_pts[i % frames]),
+          pos=np.array(obj_retarget_frame_pts[i]),
           mat=np.eye(3).flatten(),
           rgba=np.array([0.0, 0.0, 0.5, 0.3]))
       geometry_count += 1
@@ -885,7 +587,7 @@ if __name__ == "__main__":
           viewer.user_scn.geoms[geometry_count],
           type=mujoco.mjtGeom.mjGEOM_SPHERE,
           size=[hand_boundary_radius, 0, 0],
-          pos=np.array(frame_pts[i % frames]),
+          pos=np.array(frame_pts[i]),
           mat=np.eye(3).flatten(),
           rgba=np.array([0.0, 0.0, 0.5, 0.3]))
       geometry_count += 1
@@ -902,6 +604,7 @@ if __name__ == "__main__":
               rgba=np.array([0, 0, 0, 1]))
         geometry_count += len(waypts)
 
+      # object contacts
       if isinstance(object_contacts[i], np.ndarray):
         for j in range(len(object_contacts[i])):
           local_vertex = object.vertices[object_contacts[i][j]]
@@ -917,7 +620,7 @@ if __name__ == "__main__":
           )
         geometry_count += len(object_contacts[i])
 
-
+      # hand contacts
       for j in local_hand_contacts: # iterate over hand components
         for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
           local_vertex = local_hand_contacts[j][k]
