@@ -443,11 +443,24 @@ if __name__ == "__main__":
   wrist_rot_end_new = R.from_quat(qpos[3:7, endIdx])
   delta_rot_end = wrist_rot_end_new * wrist_rot_end_orig.inv()
 
+  # Get the hand position at end of contact as pivot point
+  hand_pos_end = qpos[:3, endIdx]
+
   # Apply rotation difference to frames after contact
   for i in range(endIdx+1, frames):
+    # Rotate wrist orientation
     orig_rot = R.from_quat(qpos_copy[3:7, i])
     new_rot = delta_rot_end * orig_rot
     qpos[3:7, i] = new_rot.as_quat()
+
+    # Rotate hand position trajectory relative to end contact position
+    orig_pos = qpos_copy[:3, i]
+    # Vector from end contact position to current position
+    pos_offset = orig_pos - qpos_copy[:3, endIdx]
+    # Rotate this offset vector
+    rotated_offset = delta_rot_end.apply(pos_offset)
+    # Apply to new end contact position
+    qpos[:3, i] = hand_pos_end + rotated_offset
 
 
   # retarget hand before and after contact

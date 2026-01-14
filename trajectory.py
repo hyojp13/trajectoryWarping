@@ -701,6 +701,9 @@ def apply_waypoint_rotations(object_qpos_rotation, waypts, waypts_idx, startIdx,
     # Create a copy to avoid modifying the input
     object_rotation_qpos = object_qpos_rotation.copy()
 
+    # Keep original quaternions for reference
+    object_qpos_original = object_qpos_rotation.copy()
+
     assert object_qpos_rotation.shape[0] == 4
 
     # Track total rotation applied so far
@@ -728,46 +731,46 @@ def apply_waypoint_rotations(object_qpos_rotation, waypts, waypts_idx, startIdx,
             # Apply rotation gradually from start_frame_idx to end_frame_idx
             num_frames = end_frame_idx - start_frame_idx
             if num_frames > 0:
-                # Get the starting orientation at the start of this segment
-                start_quat = object_rotation_qpos[:, start_frame_idx]  # [w, x, y, z]
-                start_quat_scipy = np.array([start_quat[1], start_quat[2], start_quat[3], start_quat[0]])
-                start_orientation = R.from_quat(start_quat_scipy)
-
-                # Compute the target orientation at the end of this segment
-                target_orientation = segment_rotation * start_orientation
-
-                # Linearly interpolate (slerp) between start and target
-                key_times = [0, 1]
-                key_rots = R.from_quat([start_orientation.as_quat(), target_orientation.as_quat()])
-                slerp = scipy.spatial.transform.Slerp(key_times, key_rots)
-
                 for frame_offset in range(num_frames + 1):
                     frame_idx = start_frame_idx + frame_offset
+
+                    # Linear interpolation factor
                     t = frame_offset / num_frames
 
-                    # Interpolate rotation
-                    interpolated_orientation = slerp(t)
+                    # Slerp between identity and segment_rotation
+                    key_rots = R.from_quat([R.identity().as_quat(), segment_rotation.as_quat()])
+                    slerp = scipy.spatial.transform.Slerp([0, 1], key_rots)
+                    interpolated_rot = slerp(t)
+
+                    # Combine with cumulative rotation from previous waypoints
+                    total_rotation = interpolated_rot * cumulative_rotation
+
+                    # Get ORIGINAL quaternion at this frame (not the modified one)
+                    current_quat = object_qpos_original[:, frame_idx]  # [w, x, y, z]
+                    current_quat_scipy = np.array([current_quat[1], current_quat[2], current_quat[3], current_quat[0]])
+                    current_rot = R.from_quat(current_quat_scipy)
+
+                    # Apply rotation: new = total_rotation * original
+                    new_rot = total_rotation * current_rot
 
                     # Convert back to MuJoCo format [w, x, y, z]
-                    new_quat_scipy = interpolated_orientation.as_quat()  # [x, y, z, w]
+                    new_quat_scipy = new_rot.as_quat()  # [x, y, z, w]
                     object_rotation_qpos[:, frame_idx] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])
 
             # Update cumulative rotation
             cumulative_rotation = segment_rotation * cumulative_rotation
 
-    # Apply cumulative rotation to all frames after the LAST waypoint
-    # (not after each waypoint, which would cause snapping)
-    last_waypoint_idx = waypts_idx[-1] if len(waypts) > 0 else startIdx
-    for frame_idx in range(last_waypoint_idx + 1, frames):
-        current_quat = object_rotation_qpos[:, frame_idx]  # [w, x, y, z]
-        current_quat_scipy = np.array([current_quat[1], current_quat[2], current_quat[3], current_quat[0]])
-        current_rot = R.from_quat(current_quat_scipy)
+            # Apply cumulative rotation to all frames after this waypoint
+            for frame_idx in range(end_frame_idx + 1, frames):
+                current_quat = object_qpos_original[:, frame_idx]  # [w, x, y, z] - use ORIGINAL
+                current_quat_scipy = np.array([current_quat[1], current_quat[2], current_quat[3], current_quat[0]])
+                current_rot = R.from_quat(current_quat_scipy)
 
-        # Apply cumulative rotation
-        new_rot = cumulative_rotation * current_rot
+                # Apply cumulative rotation
+                new_rot = cumulative_rotation * current_rot
 
-        # Convert back to MuJoCo format [w, x, y, z]
-        new_quat_scipy = new_rot.as_quat()  # [x, y, z, w]
-        object_rotation_qpos[:, frame_idx] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])
+                # Convert back to MuJoCo format [w, x, y, z]
+                new_quat_scipy = new_rot.as_quat()  # [x, y, z, w]
+                object_rotation_qpos[:, frame_idx] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])
 
     return object_rotation_qpos

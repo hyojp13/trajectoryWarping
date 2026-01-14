@@ -1,6 +1,6 @@
 <mujoco>
     <asset>
-      <mesh name="object_mesh" file="mug_pass_1_full_export_objectmesh.obj" scale="1 1 1"/>
+      <mesh name="object_mesh" file="teapot_pour_1_full_export_objectmesh.obj" scale="1 1 1"/>
     </asset>
 
     <worldbody>

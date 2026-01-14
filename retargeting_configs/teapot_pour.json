@@ -5,7 +5,7 @@
   "barriers": [
   ],
   "learning_rate": 0.01,
-  "n_iter": 10,
+  "n_iter": 1,
   "first_frame_iter": 200,
   "boundary_radius": 0.1,
   "hand_boundary_radius": 0.1,
