@@ -100,7 +100,8 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
                   hand_components, hand_component_offset, object_mesh, frame_idx,
                   kinematic_tree, lr=0.01, n_iter=100, optimize_wrist=True, optimize_joints=True,
                   agent_type='MANO_right', print_logs=False, device=None,
-                  kinematic_tree_torch=None, local_contacts_cache=None):
+                  kinematic_tree_torch=None, local_contacts_cache=None,
+                  barriers=None, barrier_weight=1.0, barrier_margin=0.01, barrier_n=2.0):
     """
     Optimize hand qpos for a single frame to minimize contact correspondence error.
     Uses differentiable forward kinematics (PyTorch autograd) with GPU acceleration.
@@ -127,6 +128,10 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
         device: torch device to use (None for auto-detection: MPS on M-series, CUDA on NVIDIA, CPU otherwise)
         kinematic_tree_torch: optional pre-computed kinematic tree with torch tensors
         local_contacts_cache: optional pre-computed local contact positions
+        barriers: optional list of barrier specifications for collision avoidance
+        barrier_weight: weight for barrier collision loss term (default: 1.0)
+        barrier_margin: distance threshold for barrier penalty (default: 0.01)
+        barrier_n: steepness parameter for barrier penalty function (default: 2.0)
 
     Returns:
         optimized qpos (numpy array)
@@ -203,6 +208,27 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
 
     optimizer = torch.optim.Adam([qpos_torch], lr=lr)
 
+
+    # Build combined barriers list including object mesh as a dynamic barrier
+    combined_barriers = []
+    if barriers is not None:
+        combined_barriers.extend(barriers)
+
+    # # Add object mesh as a dynamic barrier
+    # # Debug: print object mesh info
+    # if print_logs and frame_idx == 0:
+    #     print(f"  Object mesh bounds (local): {object_mesh.bounds}")
+    #     print(f"  Object qpos: {object_qpos}")
+    #     print(f"  Object mesh vertices: {len(object_mesh.vertices)}, faces: {len(object_mesh.faces)}")
+
+    # object_barrier = ('mesh', {
+    #     'vertices': object_mesh.vertices,
+    #     'faces': object_mesh.faces,
+    #     'qpos': object_qpos
+    # })
+    # combined_barriers.append(object_barrier)
+
+
     for iteration in range(n_iter):
         optimizer.zero_grad()
 
@@ -213,16 +239,37 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
             root_body_id, frame_idx, local_contacts_cache=local_contacts_cache
         )
 
-        # Compute loss
-        loss = compute_contact_loss_torch(
+        # Compute contact correspondence loss
+        contact_loss = compute_contact_loss_torch(
             global_hand_contacts_torch,
             global_object_contacts_torch,
             hand_contacts,
             frame_idx
         )
 
-        # Backpropagate
+        # Compute barrier collision loss if barriers are provided
+        barrier_loss = torch.tensor(0.0, device=device)
+
+        if len(combined_barriers) > 0:
+            from barrier_sdf import compute_hand_component_vertices_torch, compute_hand_barrier_loss
+
+            # Compute hand component vertices for barrier checking
+            hand_vertices = compute_hand_component_vertices_torch(
+                qpos_torch, kinematic_tree_torch, hand_components,
+                hand_component_offset, hand_components_len,
+                root_body_id, device
+            )
+
+            # Compute barrier collision loss (includes both static barriers and object)
+            barrier_loss = compute_hand_barrier_loss(
+                hand_vertices, combined_barriers,
+                n=barrier_n, margin=barrier_margin, device=device
+            )
+
+        loss = contact_loss + barrier_weight * barrier_loss
         loss.backward()
+
+        print(iteration, f"{loss.item():.6f}")
 
         # Zero gradients for non-optimized parameters
         with torch.no_grad():
@@ -254,101 +301,15 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
                         qpos_torch.data[3:7] = -qpos_torch.data[3:7]
 
         if print_logs and (iteration+1) % 30 == 0:
-            print(f"  Iteration {iteration}, Loss: {loss.item():.6f}")
+            if len(combined_barriers) > 0:
+                print(f"  Iteration {iteration}, Total Loss: {loss.item():.6f}, Contact: {contact_loss.item():.6f}, Collision: {barrier_loss.item():.6f}")
+            else:
+                print(f"  Iteration {iteration}, Loss: {loss.item():.6f}")
+
+        # Early termination if loss is effectively zero
+        if loss.item() < 1e-3:
+            if print_logs:
+                print(f"  Early termination at iteration {iteration} (loss: {loss.item():.6e})")
+            break
 
     return qpos_torch.detach().cpu().numpy()
-
-
-
-
-def optimize_trajectory(qpos_trajectory, object_qpos_trajectory, m, d, hand_contacts,
-                       object_contacts, hand_components, hand_component_offset,
-                       object_mesh, agent_type='MANO_right', optimize_wrist=True,
-                       optimize_joints=True, lr=0.01, n_iter=100, start_frame=0, end_frame=None,
-                       device=None):
-    """
-    Optimize hand trajectory across specified frame range with GPU acceleration.
-    Optimized version with cached data structures.
-
-    Args:
-        qpos_trajectory: (nq, n_frames) numpy array
-        object_qpos_trajectory: (7, n_frames) numpy array
-        m: MuJoCo model
-        d: MuJoCo data
-        hand_contacts: dict of hand contacts
-        object_contacts: list of object contacts per frame
-        hand_components: list of mesh components
-        hand_component_offset: starting body_id
-        object_mesh: trimesh object
-        agent_type: 'MANO_right' or 'Allegro_right'
-        optimize_wrist: optimize wrist position and rotation
-        optimize_joints: optimize joint rotations
-        lr: learning rate
-        n_iter: iterations per frame
-        start_frame: first frame to optimize (inclusive), default 0
-        end_frame: last frame to optimize (inclusive), default None (optimize all)
-        device: torch device to use (None for auto-detection: MPS on M-series, CUDA on NVIDIA, CPU otherwise)
-
-    Returns:
-        optimized qpos_trajectory (nq, n_frames)
-    """
-    from differentiable_fk import precompute_kinematic_tree_tensors, precompute_local_hand_contacts
-
-    # Auto-detect device if not specified
-    if device is None:
-        if torch.cuda.is_available():
-            device = torch.device('cuda')
-        elif torch.backends.mps.is_available():
-            device = torch.device('mps')
-        else:
-            device = torch.device('cpu')
-
-    print(f"Using device: {device}")
-    n_frames = qpos_trajectory.shape[1]
-
-    # Set end_frame if not specified
-    if end_frame is None:
-        end_frame = n_frames - 1
-
-    # Validate frame range
-    start_frame = max(0, start_frame)
-    end_frame = min(n_frames - 1, end_frame)
-
-    if start_frame > end_frame:
-        raise ValueError(f"start_frame ({start_frame}) must be <= end_frame ({end_frame})")
-
-    qpos_optimized = qpos_trajectory.copy()
-    num_frames_to_optimize = end_frame - start_frame + 1
-
-    kinematic_tree = extract_kinematic_tree(m, hand_component_offset, len(hand_components))
-
-    # Pre-compute kinematic tree tensors once (reused across all frames)
-    kinematic_tree_torch = precompute_kinematic_tree_tensors(
-        kinematic_tree, hand_component_offset, len(hand_components), device
-    )
-
-    print(f"Optimizing frames {start_frame} to {end_frame} (inclusive, {num_frames_to_optimize} frames total)")
-
-    for frame_idx in range(start_frame, end_frame + 1):
-        frame_num = frame_idx - start_frame + 1
-        print(f"Optimizing frame {frame_idx} ({frame_num}/{num_frames_to_optimize})")
-
-        # Pre-compute local hand contacts for this frame
-        local_contacts_cache = precompute_local_hand_contacts(
-            hand_contacts, hand_components, len(hand_components), frame_idx, device
-        )
-
-        qpos_opt = optimize_frame(
-            qpos_trajectory[:, frame_idx],
-            object_qpos_trajectory[:, frame_idx],
-            m, d, hand_contacts, object_contacts,
-            hand_components, hand_component_offset, object_mesh, frame_idx, kinematic_tree,
-            lr=lr, n_iter=n_iter, optimize_wrist=optimize_wrist,
-            optimize_joints=optimize_joints, agent_type=agent_type, device=device,
-            kinematic_tree_torch=kinematic_tree_torch,
-            local_contacts_cache=local_contacts_cache
-        )
-
-        qpos_optimized[:, frame_idx] = qpos_opt
-
-    return qpos_optimized

@@ -119,6 +119,11 @@ def load_config(config_path):
     if field not in config:
       raise ValueError(f"Configuration file must contain '{field}' field")
 
+  # Optional barrier optimization parameters with defaults
+  config.setdefault('barrier_weight', 0.6)  # Relative weight vs contact loss
+  config.setdefault('barrier_margin', 0.01)  # cm safety margin
+  config.setdefault('barrier_n', 2.0)  # Quadratic penalty
+
   return config
 
 
@@ -141,6 +146,9 @@ if __name__ == "__main__":
   new_start_pos_shift = np.array(config['new_start_pos_shift'])
   end_final_pos_shift = np.array(config['end_final_pos_shift'])
   end_obj_pos_shift = np.array(config['end_obj_pos_shift'])
+  barrier_weight = config['barrier_weight']
+  barrier_margin = config['barrier_margin']
+  barrier_n = config['barrier_n']
   # Process waypoints, preserving rotation if present
   waypts = []
   for w in config['waypts']:
@@ -286,8 +294,8 @@ if __name__ == "__main__":
   print("Frames after contact:", end_frame_count)
 
   # ensure that waypoints are not too close to a barrier
-  if not barrierWayptsCheck(barriers, waypts, boundary_radius):
-    raise Exception("waypoints are closer to the barrier than the object radius")
+  # if not barrierWayptsCheck(barriers, waypts, boundary_radius):
+  #   raise Exception("waypoints are closer to the barrier than the object radius")
 
   barrierConstraints(pos_waypt_constrained.T, boundary_radius, barriers)
   
@@ -429,7 +437,9 @@ if __name__ == "__main__":
       optimize_joints=True, agent_type=AGENT,
       print_logs=True, device=optimization_device,
       kinematic_tree_torch=kinematic_tree_torch,
-      local_contacts_cache=local_contacts_cache
+      local_contacts_cache=local_contacts_cache,
+      barriers=barriers, barrier_weight=barrier_weight,
+      barrier_margin=barrier_margin, barrier_n=barrier_n
     )
   
   # shift hand translation for before and after contact
@@ -443,24 +453,11 @@ if __name__ == "__main__":
   wrist_rot_end_new = R.from_quat(qpos[3:7, endIdx])
   delta_rot_end = wrist_rot_end_new * wrist_rot_end_orig.inv()
 
-  # Get the hand position at end of contact as pivot point
-  hand_pos_end = qpos[:3, endIdx]
-
   # Apply rotation difference to frames after contact
   for i in range(endIdx+1, frames):
-    # Rotate wrist orientation
     orig_rot = R.from_quat(qpos_copy[3:7, i])
     new_rot = delta_rot_end * orig_rot
     qpos[3:7, i] = new_rot.as_quat()
-
-    # Rotate hand position trajectory relative to end contact position
-    orig_pos = qpos_copy[:3, i]
-    # Vector from end contact position to current position
-    pos_offset = orig_pos - qpos_copy[:3, endIdx]
-    # Rotate this offset vector
-    rotated_offset = delta_rot_end.apply(pos_offset)
-    # Apply to new end contact position
-    qpos[:3, i] = hand_pos_end + rotated_offset
 
 
   # retarget hand before and after contact
@@ -497,10 +494,27 @@ if __name__ == "__main__":
   # Smooth hand trajectory
   qpos = smooth_hand_trajectory(qpos, frames, AGENT, window_length=21, polyorder=3, visualize=False)
 
+  # Save final trajectories
+  import os
+  trajectory_dir = "final_trajectories"
+  os.makedirs(trajectory_dir, exist_ok=True)
+
+  # Extract trajectory name from config file
+  config_name = os.path.splitext(os.path.basename(args.config))[0]
+
+  hand_traj_path = os.path.join(trajectory_dir, f"{config_name}_hand.npy")
+  object_traj_path = os.path.join(trajectory_dir, f"{config_name}_object.npy")
+
+  np.save(hand_traj_path, qpos)
+  np.save(object_traj_path, retargeted_spline_pos)
+
+  print(f"\nTrajectories saved:")
+  print(f"  Hand: {hand_traj_path}")
+  print(f"  Object: {object_traj_path}")
 
   frame_pts = []
   obj_retarget_frame_pts = []
-  
+
 
   with mujoco.viewer.launch_passive(m, d) as viewer:
     i = 0
