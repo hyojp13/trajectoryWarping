@@ -11,36 +11,66 @@ def get_mesh_for_body(model, body_id):
                 continue
             geoms.append(geom_id)
 
-    assert len(geoms) == 1  # should only be one geometry per body for MANO
+    if len(geoms) == 0:
+        raise ValueError(f"Body {body_id} has no mesh geoms")
 
-    geom_id = geoms[0]
-    mesh_id = model.geom_dataid[geom_id]
-    mesh_name = model.mesh(mesh_id).name
-    # print(f"Geom {mesh_id}: {mesh_name}")
+    # Handle single mesh case (MANO) or multiple meshes (Franka fingers)
+    if len(geoms) == 1:
+        geom_id = geoms[0]
+        mesh_id = model.geom_dataid[geom_id]
 
-    # import trimesh
-    # mesh = trimesh.load('agents/MANO_right/geom_assets/' + mesh_name + '.obj')
-    # verts = mesh.vertices
-    # faces = mesh.faces
+        v_start = model.mesh_vertadr[mesh_id]
+        v_count = model.mesh_vertnum[mesh_id]
+        verts = model.mesh_vert[v_start : v_start + v_count]
 
-    v_start = model.mesh_vertadr[mesh_id]
-    v_count = model.mesh_vertnum[mesh_id]
-    verts = model.mesh_vert[v_start : v_start + v_count]
+        f_start = model.mesh_faceadr[mesh_id]
+        f_count = model.mesh_facenum[mesh_id]
+        faces = model.mesh_face[f_start : f_start + f_count]
 
-    f_start = model.mesh_faceadr[mesh_id]
-    f_count = model.mesh_facenum[mesh_id]
-    faces = model.mesh_face[f_start : f_start + f_count]
+        # geom transform
+        geom_pos = model.geom_pos[geom_id]  # (3,)
+        geom_quat = model.geom_quat[geom_id]    # xyzw
+        r_geom = R.from_quat([geom_quat[1], geom_quat[2], geom_quat[3], geom_quat[0]]).as_matrix()
 
-    # geom transform
-    geom_pos = model.geom_pos[geom_id]  # (3,)
-    geom_quat = model.geom_quat[geom_id]    # xyzw
-    r_geom = R.from_quat([geom_quat[1], geom_quat[2], geom_quat[3], geom_quat[0]]).as_matrix()
+        verts = (r_geom @ verts.T).T + geom_pos  # apply geom transform
 
-    verts = (r_geom @ verts.T).T + geom_pos  # apply geom transform
+        return (faces, verts)
+    else:
+        # Multiple meshes: combine them all
+        all_verts = []
+        all_faces = []
+        vertex_offset = 0
 
-    # print(verts)
+        for geom_id in geoms:
+            mesh_id = model.geom_dataid[geom_id]
 
-    return (faces, verts)
+            v_start = model.mesh_vertadr[mesh_id]
+            v_count = model.mesh_vertnum[mesh_id]
+            verts = model.mesh_vert[v_start : v_start + v_count].copy()
+
+            f_start = model.mesh_faceadr[mesh_id]
+            f_count = model.mesh_facenum[mesh_id]
+            faces = model.mesh_face[f_start : f_start + f_count].copy()
+
+            # geom transform
+            geom_pos = model.geom_pos[geom_id]  # (3,)
+            geom_quat = model.geom_quat[geom_id]    # xyzw
+            r_geom = R.from_quat([geom_quat[1], geom_quat[2], geom_quat[3], geom_quat[0]]).as_matrix()
+
+            verts = (r_geom @ verts.T).T + geom_pos  # apply geom transform
+
+            # Offset face indices by current vertex count
+            faces = faces + vertex_offset
+            vertex_offset += len(verts)
+
+            all_verts.append(verts)
+            all_faces.append(faces)
+
+        # Concatenate all vertices and faces
+        combined_verts = np.vstack(all_verts)
+        combined_faces = np.vstack(all_faces)
+
+        return (combined_faces, combined_verts)
 
 
 # get 3D position from face ID and barycentric coordinates for hand contacts

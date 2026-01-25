@@ -63,7 +63,14 @@ def extract_kinematic_tree(model, hand_component_offset, hand_components_len):
                 jnt_type = model.jnt_type[jnt_id]
                 axis = model.jnt_axis[jnt_id].copy() if jnt_type in [mujoco.mjtJoint.mjJNT_HINGE, mujoco.mjtJoint.mjJNT_SLIDE] else None
                 
-                if jnt_type == mujoco.mjtJoint.mjJNT_BALL:  # 3D rotation (quaternion: 4 DOFs)
+                if jnt_type == mujoco.mjtJoint.mjJNT_FREE:  # 6 DOF (3 translation + 4 quaternion rotation)
+                    joints.append({
+                        'qpos_start': qposadr,
+                        'qpos_count': 7,
+                        'type': 'free',
+                        'axis': None
+                    })
+                elif jnt_type == mujoco.mjtJoint.mjJNT_BALL:  # 3D rotation (quaternion: 4 DOFs)
                     joints.append({
                         'qpos_start': qposadr,
                         'qpos_count': 4,
@@ -165,30 +172,61 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
             return transforms[body_id]
 
         if body_id == root_body_id:
-            # Root body: transformation comes from root joints (qpos[:3] for translation, qpos[3:7] for rotation)
+            # Root body: transformation comes from root joints
             info = kinematic_tree[body_id]
-            pos = zeros_3.clone()
-            rot = eye_3.clone()
 
-            # Process root joints
+            # Get body's local rotation from XML (relative to parent/world)
+            body_quat_local = info['body_quat']
+            body_rot_local = quaternion_to_rotation_matrix(body_quat_local)
+            body_pos_local = info['body_pos']
+
+            # Process joints in body-local frame
+            joint_pos = zeros_3.clone()
+            joint_rot = eye_3.clone()
+
             for joint_info in info['joints']:
                 qpos_start = joint_info['qpos_start']
                 qpos_count = joint_info['qpos_count']
                 jnt_type = joint_info['type']
-                axis = joint_info['axis']
+                axis = joint_info['axis']  # Axis in body-local frame
 
                 if qpos_start + qpos_count > len(qpos_torch):
                     continue
 
-                if jnt_type == 'slide':
-                    # Root translation joints (typically indices 0, 1, 2)
+                if jnt_type == 'free':
+                    # Free joint: qpos[start:start+7] = [x, y, z, qw, qx, qy, qz]
+                    joint_pos = joint_pos + qpos_torch[qpos_start:qpos_start+3]
+                    root_quat = qpos_torch[qpos_start+3:qpos_start+7]
+                    root_quat = root_quat / torch.norm(root_quat)  # Normalize
+                    joint_rot = quaternion_to_rotation_matrix(root_quat)
+                elif jnt_type == 'slide':
+                    # Slide joint: translation along axis (in body-local frame)
                     if axis is not None:
-                        pos = pos + qpos_torch[qpos_start] * axis
+                        joint_pos = joint_pos + qpos_torch[qpos_start] * axis
                 elif jnt_type == 'ball':
-                    # Root rotation joint (typically indices 3:7)
+                    # Ball joint: rotation as quaternion
                     root_quat = qpos_torch[qpos_start:qpos_start+4]
                     root_quat = root_quat / torch.norm(root_quat)  # Normalize
-                    rot = quaternion_to_rotation_matrix(root_quat)
+                    joint_rot = quaternion_to_rotation_matrix(root_quat)
+                elif jnt_type == 'hinge':
+                    # Hinge joint: rotation around axis (in body-local frame)
+                    if axis is not None:
+                        angle = qpos_torch[qpos_start]
+                        axis_normalized = axis / torch.norm(axis)
+                        K = torch.stack([
+                            torch.stack([zeros_3[0], -axis_normalized[2], axis_normalized[1]]),
+                            torch.stack([axis_normalized[2], zeros_3[0], -axis_normalized[0]]),
+                            torch.stack([-axis_normalized[1], axis_normalized[0], zeros_3[0]])
+                        ])
+                        c, s = torch.cos(angle), torch.sin(angle)
+                        rot_hinge = eye_3 + s * K + (1 - c) * (K @ K)
+                        joint_rot = joint_rot @ rot_hinge
+
+            # Transform from body-local to world:
+            # pos_world = body_rot_local @ joint_pos + body_pos_local
+            # rot_world = body_rot_local @ joint_rot
+            pos = body_rot_local @ joint_pos + body_pos_local
+            rot = body_rot_local @ joint_rot
 
             transforms[body_id] = {'pos': pos, 'rot': rot}
             return transforms[body_id]
@@ -233,19 +271,32 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
             if qpos_start + qpos_count > len(qpos_torch):
                 continue
 
-            if jnt_type == 'ball':
+            if jnt_type == 'free':
+                # Free joint: qpos[qpos_start:qpos_start+7] = [x, y, z, qw, qx, qy, qz]
+                # Translation (3 DOFs)
+                joint_pos = joint_pos + qpos_torch[qpos_start:qpos_start+3]
+                # Rotation (4 DOFs - quaternion)
+                joint_quat = qpos_torch[qpos_start+3:qpos_start+7]
+                joint_quat = joint_quat / torch.norm(joint_quat)  # Normalize
+                joint_rot_jnt = quaternion_to_rotation_matrix(joint_quat)
+                joint_rot = joint_rot @ joint_rot_jnt  # Compose rotations
+            elif jnt_type == 'ball':
                 # Quaternion joint: qpos[qpos_start:qpos_start+4] = [w, x, y, z]
                 joint_quat = qpos_torch[qpos_start:qpos_start+4]
                 joint_quat = joint_quat / torch.norm(joint_quat)  # Normalize
                 joint_rot_jnt = quaternion_to_rotation_matrix(joint_quat)
                 joint_rot = joint_rot @ joint_rot_jnt  # Compose rotations
             elif jnt_type == 'slide':
-                # Translation along axis - axis is already a tensor
+                # Translation along axis
+                # NOTE: axis is in parent frame. Since we apply T_joint BEFORE T_body,
+                # the axis should NOT be transformed by body_rot_local
                 if axis is not None:
                     translation = qpos_torch[qpos_start] * axis
                     joint_pos = joint_pos + translation
             elif jnt_type == 'hinge':
                 # Rotation around axis (Rodrigues' rotation formula)
+                # NOTE: axis is in parent frame. Since we apply T_joint BEFORE T_body,
+                # the axis should NOT be transformed by body_rot_local
                 if axis is not None:
                     angle = qpos_torch[qpos_start]
                     axis_normalized = axis / torch.norm(axis)  # Normalize
@@ -260,10 +311,18 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
                     joint_rot = joint_rot @ rot_hinge
 
         # Compute world transform: T_world = T_parent * T_body_local * T_joint
-        # For positions: p_world = parent_rot @ (body_pos_local + joint_pos) + parent_pos
+        # The joint is defined in the body's local frame (after body transform)
+        # For positions: p_world = parent_rot @ (body_pos_local + body_rot_local @ joint_pos) + parent_pos
         # For rotations: R_world = parent_rot @ body_rot_local @ joint_rot
 
-        world_pos = parent_rot @ (body_pos_local + joint_pos) + parent_pos
+        # DEBUG: Print for link0
+        if body_id == hand_component_offset and False:  # Disabled by default
+            print(f'DEBUG link0 (body {body_id}):')
+            print(f'  body_pos_local: {body_pos_local}')
+            print(f'  joint_pos: {joint_pos}')
+            print(f'  parent_pos: {parent_pos}')
+
+        world_pos = parent_rot @ (body_pos_local + body_rot_local @ joint_pos) + parent_pos
         world_rot = parent_rot @ body_rot_local @ joint_rot
 
         transforms[body_id] = {'pos': world_pos, 'rot': world_rot}
@@ -297,6 +356,10 @@ def precompute_local_hand_contacts(hand_contacts, hand_components, hand_componen
     local_hand_contacts_cache = {}
 
     for hand_component_id in range(hand_components_len):
+        # Skip if this component doesn't have contacts
+        if hand_component_id not in hand_contacts:
+            continue
+
         contacts_this_frame = hand_contacts[hand_component_id][frame_idx]
         if contacts_this_frame is None:
             continue

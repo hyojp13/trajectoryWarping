@@ -1,0 +1,266 @@
+<mujoco model="adroit_in_kitchen">
+  <compiler angle="radian" meshdir="Adroit/"/>
+
+  <!-- Kitchen scene without MANO hand -->
+  <include file="kitchen_no_hand.xml"/>
+
+  <compiler meshdir="Adroit/meshes/"/>
+
+  <asset>
+    <!-- Adroit materials -->
+    <material name="MatColl" specular="1" shininess="0.3" reflectance="0.5" rgba="0.4 0.5 0.6 1"/>
+    <material name="MatViz" specular="0.75" shininess="0.1" reflectance="0.5" rgba="0.9 0.7 0.5 1"/>
+
+    <!-- Adroit hand meshes (using relative paths from Adroit/meshes/) -->
+    <mesh file="forearm_simple.stl" name="forearm_simple" scale="1 1 1"/>
+    <mesh file="wrist.stl" name="wrist" scale="0.001 0.001 0.001"/>
+    <mesh file="palm.stl" name="palm" scale="0.001 0.001 0.001"/>
+    <mesh file="lfmetacarpal.stl" name="lfmetacarpal" scale="0.001 0.001 0.001"/>
+    <mesh file="knuckle.stl" name="knuckle" scale="0.001 0.001 0.001"/>
+    <mesh file="F3.stl" name="F3" scale="0.001 0.001 0.001"/>
+    <mesh file="F2.stl" name="F2" scale="0.001 0.001 0.001"/>
+    <mesh file="F1.stl" name="F1" scale="0.001 0.001 0.001"/>
+    <mesh file="TH3_z.stl" name="TH3_z" scale="0.001 0.001 0.001"/>
+    <mesh file="TH2_z.stl" name="TH2_z" scale="0.001 0.001 0.001"/>
+    <mesh file="TH1_z.stl" name="TH1_z" scale="0.001 0.001 0.001"/>
+  </asset>
+
+  <default class="main">
+    <default class="D_Touch">
+      <site size="0.009 0.004 0.013" group="4" type="box" rgba="0.8 0.8 0.8 0.15"/>
+    </default>
+    <default class="DC_Hand">
+      <geom conaffinity="0" group="4" material="MatColl" friction="1 0.5 0.01" margin="0.0005"/>
+    </default>
+    <default class="D_Vizual">
+      <geom type="mesh" contype="0" conaffinity="0" group="2" material="MatViz" friction="1 0.5 0.01" margin="0.0005"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <!-- Adroit hand with 6 DOF forearm (3 translation + 3 rotation joints) -->
+    <!-- Note: Base pos/quat removed so ARTx/y/z work as absolute positions -->
+    <body name="forearm" pos="0 -0.7 0.2" quat="0.000563312 -0.000562864 0.706825 0.707388">
+      <inertial pos="0.001 -0.002 0.29" quat="0.982037 -0.0160006 0 -0.188007" mass="4" diaginertia="0.01 0.01 0.0075"/>
+      <joint name="ARTx" pos="0 0 0" axis="1 0 0" type="slide" range="-0.25 0.25" damping="20" limited="true"
+             margin="0.01" armature="0.001" frictionloss="0.001"/>
+      <joint name="ARTy" pos="0 0 0" axis="0 1 0" type="slide" range="0 0.2" damping="20" limited="true" margin="0.01"
+             armature="0.001" frictionloss="0.001"/>
+      <joint name="ARTz" pos="0 0 0" axis="0 0 1" type="slide" range="-0.3 0.5" damping="20" limited="true"
+             margin="0.01" armature="0.001" frictionloss="0.001"/>
+      <joint name="ARRx" pos="0 0 0" axis="1 0 0" range="-0.75 0.75" damping="20" limited="true" margin="0.01"
+             armature="0.001" frictionloss="0.001"/>
+      <joint name="ARRy" pos="0 0 0" axis="0 1 0" range="-0.75 0.75" damping="20" limited="true" margin="0.01"
+             armature="0.001" frictionloss="0.001"/>
+      <joint name="ARRz" pos="0 0 0" axis="0 0 1" range="-0.75 0.75" damping="20" limited="true" margin="0.01"
+             armature="0.001" frictionloss="0.001"/>
+      <geom name="V_forearm" class="D_Vizual" pos="0 -0.01 0.181" quat="0.707388 0 0 -0.706825" mesh="forearm_simple"/>
+      <geom name="C_forearm1" class="DC_Hand" size="0.06 0.043" pos="0 0 0.29" type="capsule" rgba="0.4 0.5 0.6 0.1"/>
+      <body name="wrist" pos="0 0 0.396">
+        <inertial pos="0.003 0 0.016" quat="0.504234 0.49623 0.49523 0.504234" mass="0.3"
+                  diaginertia="0.001 0.001 0.001"/>
+        <joint name="WRJ1" pos="0 0 0" axis="0 1 0" range="-0.524 0.175" armature="0.005" damping="0.5" user="1123"
+               limited="true" margin="0.01" frictionloss="0.001"/>
+        <geom name="V_wrist" class="D_Vizual" mesh="wrist"/>
+                <geom name="C_wrist" class="DC_Hand" size="0.015 0.01" quat="0.707107 0.707107 0 0" type="capsule"
+                      rgba="0.4 0.5 0.6 0.1"/>
+        <body name="palm" pos="0 0 0.034">
+          <inertial pos="0.006 0 0.036" quat="0.715833 0.0439898 0.0749825 0.692839" mass="0.3"
+                    diaginertia="0.001 0.001 0.001"/>
+          <joint name="WRJ0" pos="0 0 0" axis="1 0 0" range="-0.785 0.611" user="1122"
+                 limited="true" margin="0.01" armature="0.001" damping="0.05" frictionloss="0.001"/>
+          <geom name="V_palm" class="D_Vizual" mesh="palm"/>
+          <geom name="C_palm0" class="DC_Hand" size="0.052 0.015 0.06" pos="-0.008 0 0.038" type="box"
+                rgba="0.4 0.5 0.6 0.1"/>
+          <site name="S_grasp" pos="0.007 -0.05 0.07" quat="0.00863043 -0.595202 -0.00337281 -0.803523" size="0.01"
+                rgba="0 0 0 0"/>
+          <site name="Tch_ffmetacarpal" class="D_Touch" pos="0.033 -0.008 0.078" size="0.009 0.004 0.006"/>
+          <site name="Tch_mfmetacarpal" class="D_Touch" pos="0.011 -0.008 0.074" size="0.009 0.004 0.014"/>
+          <site name="Tch_rfmetacarpal" class="D_Touch" pos="-0.011 -0.008 0.068" size="0.009 0.004 0.016"/>
+          <site name="Tch_thmetacarpal" class="D_Touch" pos="0.006 -0.008 0.042" quat="0.959662 0 0.281157 0"
+                size="0.008 0.004 0.015"/>
+          <site name="Tch_palm" class="D_Touch" pos="-0.017 -0.008 0.024" quat="0.877583 0 -0.479426 0"
+                size="0.012 0.004 0.016"/>
+          <body name="ffknuckle" pos="0.033 0 0.095">
+            <inertial pos="0 0 0" quat="0.520062 0.854102 0.00600072 -0.00300036" mass="0.008"
+                      diaginertia="1e-05 1e-05 1e-05"/>
+            <joint name="FFJ3" pos="0 0 0" axis="0 1 0" range="-0.436 0.436" user="1103" limited="true" margin="0.01"
+                   armature="0.001" damping="0.05" frictionloss="0.001"/>
+            <geom name="V_ffknuckle" class="D_Vizual" mesh="knuckle"/>
+            <body name="ffproximal" pos="0 0 0">
+              <inertial pos="0 0 0.023" quat="0.707095 -0.00400054 0.00400054 0.707095" mass="0.014"
+                        diaginertia="1e-05 1e-05 1e-05"/>
+              <joint name="FFJ2" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1102" limited="true" margin="0.01"
+                     armature="0.001" damping="0.05" frictionloss="0.001"/>
+              <geom name="V_ffproximal" class="D_Vizual" mesh="F3"/>
+              <geom name="C_ffproximal" class="DC_Hand" size="0.01 0.0225" pos="0 0 0.0225" type="capsule"/>
+              <site name="Tch_ffproximal" class="D_Touch" pos="0 -0.007 0.022" size="0.009 0.004 0.012"/>
+              <body name="ffmiddle" pos="0 0 0.045">
+                <inertial pos="0 0 0.011" quat="0.707107 0 0 0.707107" mass="0.012" diaginertia="1e-05 1e-05 1e-05"/>
+                <joint name="FFJ1" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1101" limited="true" margin="0.01"
+                       armature="0.001" damping="0.05" frictionloss="0.001"/>
+                <geom name="V_ffmiddle" class="D_Vizual" mesh="F2"/>
+                <geom name="C_ffmiddle" class="DC_Hand" size="0.00805 0.0125" pos="0 0 0.0125" type="capsule"/>
+                <site name="Tch_ffmiddle" class="D_Touch" pos="0 -0.007 0.013" size="0.009 0.002 0.007"/>
+                <body name="ffdistal" pos="0 0 0.025">
+                  <inertial pos="0 0 0.015" quat="0.7071 -0.00300043 0.00300043 0.7071" mass="0.01"
+                            diaginertia="1e-05 1e-05 1e-05"/>
+                  <joint name="FFJ0" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1100" limited="true" margin="0.01"
+                         armature="0.001" damping="0.05" frictionloss="0.001"/>
+                  <geom name="V_ffdistal" class="D_Vizual" mesh="F1"/>
+                  <geom name="C_ffdistal" class="DC_Hand" size="0.007 0.0165" pos="0 0 0.0165" type="capsule"/>
+                  <site name="Tch_ffdistal" class="D_Touch" pos="0 -0.007 0.015" size="0.009 0.004 0.012"/>
+                </body>
+              </body>
+            </body>
+          </body>
+          <body name="mfknuckle" pos="0.011 0 0.099">
+            <inertial pos="0 0 0" quat="0.520062 0.854102 0.00600072 -0.00300036" mass="0.008"
+                      diaginertia="1e-05 1e-05 1e-05"/>
+            <joint name="MFJ3" pos="0 0 0" axis="0 1 0" range="-0.436 0.436" user="1203" limited="true" margin="0.01"
+                   armature="0.001" damping="0.05" frictionloss="0.001"/>
+            <geom name="V_mfknuckle" class="D_Vizual" mesh="knuckle"/>
+            <body name="mfproximal" pos="0 0 0">
+              <inertial pos="0 0 0.023" quat="0.707095 -0.00400054 0.00400054 0.707095" mass="0.014"
+                        diaginertia="1e-05 1e-05 1e-05"/>
+              <joint name="MFJ2" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1202" limited="true" margin="0.01"
+                     armature="0.001" damping="0.05" frictionloss="0.001"/>
+              <geom name="V_mfproximal" class="D_Vizual" mesh="F3"/>
+              <geom name="C_mfproximal" class="DC_Hand" size="0.01 0.0225" pos="0 0 0.0225" type="capsule"/>
+              <site name="Tch_mfproximal" class="D_Touch" pos="0 -0.007 0.022" size="0.009 0.004 0.012"/>
+              <body name="mfmiddle" pos="0 0 0.045">
+                <inertial pos="0 0 0.011" quat="0.707107 0 0 0.707107" mass="0.012" diaginertia="1e-05 1e-05 1e-05"/>
+                <joint name="MFJ1" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1201" limited="true" margin="0.01"
+                       armature="0.001" damping="0.05" frictionloss="0.001"/>
+                <geom name="V_mfmiddle" class="D_Vizual" mesh="F2"/>
+                <geom name="C_mfmiddle" class="DC_Hand" size="0.00805 0.0125" pos="0 0 0.0125" type="capsule"/>
+                <site name="Tch_mfmiddle" class="D_Touch" pos="0 -0.007 0.013" size="0.009 0.002 0.007"/>
+                <body name="mfdistal" pos="0 0 0.025">
+                  <inertial pos="0 0 0.015" quat="0.7071 -0.00300043 0.00300043 0.7071" mass="0.01"
+                            diaginertia="1e-05 1e-05 1e-05"/>
+                  <joint name="MFJ0" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1200" limited="true" margin="0.01"
+                         armature="0.001" damping="0.05" frictionloss="0.001"/>
+                  <geom name="V_mfdistal" class="D_Vizual" mesh="F1"/>
+                  <geom name="C_mfdistal" class="DC_Hand" size="0.007 0.0165" pos="0 0 0.0165" type="capsule"/>
+                  <site name="Tch_mfdistal" class="D_Touch" pos="0 -0.007 0.015" size="0.009 0.004 0.012"/>
+                </body>
+              </body>
+            </body>
+          </body>
+          <body name="rfknuckle" pos="-0.011 0 0.095">
+            <inertial pos="0 0 0" quat="0.520062 0.854102 0.00600072 -0.00300036" mass="0.008"
+                      diaginertia="1e-05 1e-05 1e-05"/>
+            <joint name="RFJ3" pos="0 0 0" axis="0 1 0" range="-0.436 0.436" user="1303" limited="true" margin="0.01"
+                   armature="0.001" damping="0.05" frictionloss="0.001"/>
+            <geom name="V_rfknuckle" class="D_Vizual" mesh="knuckle"/>
+            <body name="rfproximal" pos="0 0 0">
+              <inertial pos="0 0 0.023" quat="0.707095 -0.00400054 0.00400054 0.707095" mass="0.014"
+                        diaginertia="1e-05 1e-05 1e-05"/>
+              <joint name="RFJ2" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1302" limited="true" margin="0.01"
+                     armature="0.001" damping="0.05" frictionloss="0.001"/>
+              <geom name="V_rfproximal" class="D_Vizual" mesh="F3"/>
+              <geom name="C_rfproximal" class="DC_Hand" size="0.01 0.0225" pos="0 0 0.0225" type="capsule"/>
+              <site name="Tch_rfproximal" class="D_Touch" pos="0 -0.007 0.022" size="0.009 0.004 0.012"/>
+              <body name="rfmiddle" pos="0 0 0.045">
+                <inertial pos="0 0 0.011" quat="0.707107 0 0 0.707107" mass="0.012" diaginertia="1e-05 1e-05 1e-05"/>
+                <joint name="RFJ1" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1301" limited="true" margin="0.01"
+                       armature="0.001" damping="0.05" frictionloss="0.001"/>
+                <geom name="V_rfmiddle" class="D_Vizual" mesh="F2"/>
+                <geom name="C_rfmiddle" class="DC_Hand" size="0.00805 0.0125" pos="0 0 0.0125" type="capsule"/>
+                <site name="Tch_rfmiddle" class="D_Touch" pos="0 -0.007 0.013" size="0.009 0.002 0.007"/>
+                <body name="rfdistal" pos="0 0 0.025">
+                  <inertial pos="0 0 0.015" quat="0.7071 -0.00300043 0.00300043 0.7071" mass="0.01"
+                            diaginertia="1e-05 1e-05 1e-05"/>
+                  <joint name="RFJ0" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1300" limited="true" margin="0.01"
+                         armature="0.001" damping="0.05" frictionloss="0.001"/>
+                  <geom name="V_rfdistal" class="D_Vizual" mesh="F1"/>
+                  <geom name="C_rfdistal" class="DC_Hand" size="0.007 0.0165" pos="0 0 0.0165" type="capsule"/>
+                  <site name="Tch_rfdistal" class="D_Touch" pos="0 -0.007 0.015" size="0.009 0.004 0.012"/>
+                </body>
+              </body>
+            </body>
+          </body>
+          <body name="lfmetacarpal" pos="-0.033 0 0.029475" quat="0.999195 0 0 -0.0401386">
+            <inertial pos="0 0 0" quat="0.520062 0.854102 0.00600072 -0.00300036" mass="0.008"
+                      diaginertia="1e-05 1e-05 1e-05"/>
+            <joint name="LFJ4" pos="0 0 0" axis="0 1 0" range="0 0.785" user="1404" limited="true" margin="0.01"
+                   armature="0.001" damping="0.05" frictionloss="0.001"/>
+            <geom name="V_lfmetacarpal" class="D_Vizual" mesh="lfmetacarpal"/>
+            <body name="lfknuckle" pos="0 0 0.0645">
+              <inertial pos="0 0 0" quat="0.520062 0.854102 0.00600072 -0.00300036" mass="0.008"
+                        diaginertia="1e-05 1e-05 1e-05"/>
+              <joint name="LFJ3" pos="0 0 0" axis="0 1 0" range="-0.436 0.436" user="1403" limited="true" margin="0.01"
+                     armature="0.001" damping="0.05" frictionloss="0.001"/>
+              <geom name="V_lfknuckle" class="D_Vizual" mesh="knuckle"/>
+              <body name="lfproximal" pos="0 0 0">
+                <inertial pos="0 0 0.0165" quat="0.707095 -0.00400054 0.00400054 0.707095" mass="0.014"
+                          diaginertia="1e-05 1e-05 1e-05"/>
+                <joint name="LFJ2" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1402" limited="true" margin="0.01"
+                       armature="0.001" damping="0.05" frictionloss="0.001"/>
+                <geom name="V_lfproximal" class="D_Vizual" mesh="F3"/>
+                <geom name="C_lfproximal" class="DC_Hand" size="0.01 0.0165" pos="0 0 0.0165" type="capsule"/>
+                <site name="Tch_lfproximal" class="D_Touch" pos="0 -0.007 0.016" size="0.009 0.004 0.012"/>
+                <body name="lfmiddle" pos="0 0 0.033">
+                  <inertial pos="0 0 0.011" quat="0.707107 0 0 0.707107" mass="0.012" diaginertia="1e-05 1e-05 1e-05"/>
+                  <joint name="LFJ1" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1401" limited="true" margin="0.01"
+                         armature="0.001" damping="0.05" frictionloss="0.001"/>
+                  <geom name="V_lfmiddle" class="D_Vizual" mesh="F2"/>
+                  <geom name="C_lfmiddle" class="DC_Hand" size="0.00805 0.0125" pos="0 0 0.0125" type="capsule"/>
+                  <site name="Tch_lfmiddle" class="D_Touch" pos="0 -0.007 0.013" size="0.009 0.002 0.007"/>
+                  <body name="lfdistal" pos="0 0 0.025">
+                    <inertial pos="0 0 0.015" quat="0.7071 -0.00300043 0.00300043 0.7071" mass="0.01"
+                              diaginertia="1e-05 1e-05 1e-05"/>
+                    <joint name="LFJ0" pos="0 0 0" axis="1 0 0" range="0 1.571" user="1400" limited="true" margin="0.01"
+                           armature="0.001" damping="0.05" frictionloss="0.001"/>
+                    <geom name="V_lfdistal" class="D_Vizual" mesh="F1"/>
+                    <geom name="C_lfdistal" class="DC_Hand" size="0.007 0.0165" pos="0 0 0.0165" type="capsule"/>
+                    <site name="Tch_lfdistal" class="D_Touch" pos="0 -0.007 0.015" size="0.009 0.004 0.012"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+          <body name="thbase" pos="0.034 -0.008 0.022" quat="0.923905 -0.382617 0 0">
+            <inertial pos="0 0 0" quat="0.323263 0.630435 0.323263 0.630435" mass="0.01" diaginertia="1e-05 1e-05 1e-05"/>
+            <joint name="THJ4" pos="0 0 0" axis="0 0 -1" range="0 1.222" user="1504" limited="true" margin="0.01"
+                   armature="0.001" damping="0.05" frictionloss="0.001"/>
+            <body name="thproximal" pos="0 0 0" quat="0.707107 0 -0.707107 0">
+              <inertial pos="0 0 0.019" quat="0.707095 -0.00400054 0.00400054 0.707095" mass="0.016"
+                        diaginertia="1e-05 1e-05 1e-05"/>
+              <joint name="THJ3" pos="0 0 0" axis="0 1 0" range="0 1.222" user="1503" limited="true" margin="0.01"
+                     armature="0.001" damping="0.05" frictionloss="0.001"/>
+              <geom name="V_thproximal" class="D_Vizual" mesh="TH3_z"/>
+              <geom name="C_thproximal" class="DC_Hand" size="0.01 0.019" pos="0 0 0.019" type="capsule"/>
+              <site name="Tch_thproximal" class="D_Touch" pos="0 0.009 0.019" size="0.009 0.004 0.012"/>
+              <body name="thhub" pos="0 0 0.038">
+                <inertial pos="0 0 0" quat="0.520062 0.854102 0.00600072 -0.00300036" mass="0.004"
+                          diaginertia="1e-05 1e-05 1e-05"/>
+                <joint name="THJ2" pos="0 0 0" axis="1 0 0" range="-0.209 0.209" user="1502" limited="true" margin="0.01"
+                       armature="0.001" damping="0.05" frictionloss="0.001"/>
+                <geom name="V_thhub" class="D_Vizual" mesh="TH2_z"/>
+                <body name="thmiddle" pos="0 0 0">
+                  <inertial pos="0 0 0.016" quat="0.707095 -0.00400054 0.00400054 0.707095" mass="0.016"
+                            diaginertia="1e-05 1e-05 1e-05"/>
+                  <joint name="THJ1" pos="0 0 0" axis="0 1 0" range="-0.524 0.524" user="1501" limited="true" margin="0.01"
+                         armature="0.001" damping="0.05" frictionloss="0.001"/>
+                  <geom name="V_thmiddle" class="D_Vizual" mesh="TH2_z"/>
+                  <geom name="C_thmiddle" class="DC_Hand" size="0.0095 0.016" pos="0 0 0.016" type="capsule"/>
+                  <site name="Tch_thmiddle" class="D_Touch" pos="0 0.009 0.016" size="0.009 0.004 0.012"/>
+                  <body name="thdistal" pos="0 0 0.032">
+                    <inertial pos="0 0 0.0155" quat="0.7071 -0.00300043 0.00300043 0.7071" mass="0.016"
+                              diaginertia="1e-05 1e-05 1e-05"/>
+                    <joint name="THJ0" pos="0 0 0" axis="0 1 0" range="-1.571 0" user="1500" limited="true" margin="0.01"
+                           armature="0.001" damping="0.05" frictionloss="0.001"/>
+                    <geom name="V_thdistal" class="D_Vizual" mesh="TH1_z"/>
+                    <geom name="C_thdistal" class="DC_Hand" size="0.008 0.0155" pos="0 0 0.0155" type="capsule"/>
+                    <site name="Tch_thdistal" class="D_Touch" pos="0 0.009 0.015" size="0.009 0.004 0.012"/>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

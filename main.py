@@ -438,8 +438,8 @@ if __name__ == "__main__":
       print_logs=True, device=optimization_device,
       kinematic_tree_torch=kinematic_tree_torch,
       local_contacts_cache=local_contacts_cache,
-      barriers=barriers, barrier_weight=barrier_weight,
-      barrier_margin=barrier_margin, barrier_n=barrier_n
+      # barriers=barriers, barrier_weight=barrier_weight,
+      # barrier_margin=barrier_margin, barrier_n=barrier_n
     )
   
   # shift hand translation for before and after contact

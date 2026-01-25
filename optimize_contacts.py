@@ -12,31 +12,57 @@ from differentiable_fk import extract_kinematic_tree
 def compute_global_object_contacts(object_qpos, object_mesh, object_contacts, frame_idx):
     """
     Compute global positions of object contacts.
-    
+
     Args:
         object_qpos: (7,) numpy array [pos(3), quat(4)]
         object_mesh: trimesh object
-        object_contacts: list of vertex indices per frame
+        object_contacts: list of contact data per frame
+                        Each frame contains either:
+                        - vertex indices (legacy format)
+                        - list of (face_id, bary_coords) tuples (new format)
         frame_idx: frame index to process
-        
+
     Returns:
         numpy array of global contact positions (N, 3)
     """
     obj_pos = object_qpos[:3]
     obj_quat = object_qpos[3:]  # [w, x, y, z]
-    
+
     # Convert MuJoCo quat [w,x,y,z] to SciPy quat [x,y,z,w]
     quat_scipy = np.array([obj_quat[1], obj_quat[2], obj_quat[3], obj_quat[0]])
     rotation = R.from_quat(quat_scipy)
     rotation_matrix = rotation.as_matrix()  # (3, 3)
-    
-    contact_vertex_indices = object_contacts[frame_idx]
-    if not isinstance(contact_vertex_indices, np.ndarray):
-        contact_vertex_indices = np.array(contact_vertex_indices)
 
-    local_vertices = object_mesh.vertices[contact_vertex_indices]  # (N, 3)
+    contacts_this_frame = object_contacts[frame_idx]
+
+    # Check format: list of tuples (face, bary) or vertex indices
+    if isinstance(contacts_this_frame, list) and len(contacts_this_frame) > 0:
+        if isinstance(contacts_this_frame[0], tuple) and len(contacts_this_frame[0]) == 2:
+            # New format: list of (face_id, bary_coords) tuples
+            local_positions = []
+            for face_id, bary_coords in contacts_this_frame:
+                # Get face vertices
+                face = object_mesh.faces[face_id]
+                v0 = object_mesh.vertices[face[0]]
+                v1 = object_mesh.vertices[face[1]]
+                v2 = object_mesh.vertices[face[2]]
+
+                # Compute position using barycentric coordinates
+                local_pos = bary_coords[0] * v0 + bary_coords[1] * v1 + bary_coords[2] * v2
+                local_positions.append(local_pos)
+
+            local_vertices = np.array(local_positions)  # (N, 3)
+        else:
+            # Legacy format: vertex indices
+            contact_vertex_indices = np.array(contacts_this_frame)
+            local_vertices = object_mesh.vertices[contact_vertex_indices]  # (N, 3)
+    else:
+        # Legacy format: numpy array of vertex indices
+        contact_vertex_indices = np.array(contacts_this_frame)
+        local_vertices = object_mesh.vertices[contact_vertex_indices]  # (N, 3)
+
     global_vertices = (rotation_matrix @ local_vertices.T).T + obj_pos  # (N, 3)
-    
+
     return global_vertices
 
 
@@ -73,6 +99,18 @@ def compute_contact_loss_torch(global_hand_contacts_dict, global_object_contacts
             # Since we have 1-to-1 correspondence, each object_contact_idx should only appear once
             contact_correspondences[object_contact_idx] = global_positions[i]
 
+    # DEBUG: Print contact info on first call
+    import __main__
+    if not hasattr(__main__, '_contact_corr_debug_printed'):
+        print(f"\n[DEBUG compute_contact_loss_torch - correspondences]")
+        print(f"  Hand component IDs with contacts: {list(global_hand_contacts_dict.keys())}")
+        for hand_component_id in global_hand_contacts_dict:
+            global_positions = global_hand_contacts_dict[hand_component_id]
+            print(f"  Component {hand_component_id}: {len(global_positions)} contact(s)")
+            print(f"    Positions: {global_positions}")
+        print(f"  Contact correspondences: {list(contact_correspondences.keys())}")
+        __main__._contact_corr_debug_printed = True
+
     # Compute loss: for each object contact, compute distance to its corresponding hand contact
     losses = []
     for obj_idx in range(len(global_object_contacts)):
@@ -93,6 +131,17 @@ def compute_contact_loss_torch(global_hand_contacts_dict, global_object_contacts
         return torch.tensor(0.0, requires_grad=True)
 
     total_loss = torch.stack(losses).mean()
+
+    # DEBUG: Print loss details on first call
+    import __main__
+    if not hasattr(__main__, '_contact_loss_debug_printed'):
+        print(f"\n[DEBUG compute_contact_loss_torch]")
+        print(f"  Number of object contacts: {len(global_object_contacts)}")
+        print(f"  Number of contact correspondences: {len(contact_correspondences)}")
+        print(f"  Individual distances: {[f'{d.item():.6f}' for d in losses]}")
+        print(f"  Mean loss: {total_loss.item():.6f}")
+        __main__._contact_loss_debug_printed = True
+
     return total_loss
 
 
@@ -171,6 +220,30 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
             optimize_mask[7:] = True  # Only joints
         else:
             return qpos_init
+    elif agent_type == 'Franka':
+        # Franka: qpos = [pos(3), quat(4), 7 arm joints, 2 finger joints]
+        if optimize_wrist and optimize_joints:
+            optimize_mask = np.ones(len(qpos_init), dtype=bool)
+        elif optimize_wrist:
+            optimize_mask = np.zeros(len(qpos_init), dtype=bool)
+            optimize_mask[:7] = True  # Translation + base rotation
+        elif optimize_joints:
+            optimize_mask = np.zeros(len(qpos_init), dtype=bool)
+            optimize_mask[7:] = True  # Arm and finger joints
+        else:
+            return qpos_init
+    elif agent_type == 'Adroit':
+        # Adroit: qpos = [ARTx, ARTy, ARTz, ARRx, ARRy, ARRz, 24 hand joints]
+        if optimize_wrist and optimize_joints:
+            optimize_mask = np.ones(len(qpos_init), dtype=bool)
+        elif optimize_wrist:
+            optimize_mask = np.zeros(len(qpos_init), dtype=bool)
+            optimize_mask[:6] = True  # Forearm translation + rotation
+        elif optimize_joints:
+            optimize_mask = np.zeros(len(qpos_init), dtype=bool)
+            optimize_mask[6:] = True  # Hand joints only
+        else:
+            return qpos_init
     else:  # Allegro_right
         if optimize_wrist and optimize_joints:
             optimize_mask = np.ones(len(qpos_init), dtype=bool)
@@ -208,6 +281,27 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
 
     optimizer = torch.optim.Adam([qpos_torch], lr=lr)
 
+    # Precompute joint limits for Franka (avoid recreating tensor in every iteration)
+    franka_joint_limits = None
+    if agent_type == 'Franka':
+        franka_joint_limits = torch.tensor([
+            # [-2.8973, 2.8973],   # joint1
+            # [-1.7628, 1.7628],   # joint2
+            # [-2.8973, 2.8973],   # joint3
+            # [-3.0718, -0.0698],  # joint4
+            # [-2.8973, 2.8973],   # joint5
+            # [-0.0175, 3.7525],   # joint6
+            # [-2.8973, 2.8973],   # joint7
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0.0, 0.04],         # finger_joint1
+            [0.0, 0.04]          # finger_joint2
+        ], device=device, dtype=torch.float32)
 
     # Build combined barriers list including object mesh as a dynamic barrier
     combined_barriers = []
@@ -269,7 +363,8 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
         loss = contact_loss + barrier_weight * barrier_loss
         loss.backward()
 
-        print(iteration, f"{loss.item():.6f}")
+        if print_logs and iteration % 10 == 0:
+            print(f"  Iteration {iteration}, Loss: {loss.item():.6f}, Contact: {contact_loss.item():.6f}")
 
         # Zero gradients for non-optimized parameters
         with torch.no_grad():
@@ -293,6 +388,37 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
                         qpos_torch.data[i:i+4] = qpos_torch.data[i:i+4] / torch.norm(qpos_torch.data[i:i+4])
                         if qpos_torch.data[i] < 0:
                             qpos_torch.data[i:i+4] = -qpos_torch.data[i:i+4]
+            elif agent_type == 'Franka':
+                # Normalize base quaternion only (Franka has regular joint angles, not quaternions)
+                if optimize_mask[3] and optimize_mask[4] and optimize_mask[5] and optimize_mask[6]:
+                    qpos_torch.data[3:7] = qpos_torch.data[3:7] / torch.norm(qpos_torch.data[3:7])
+                    if qpos_torch.data[3] < 0:
+                        qpos_torch.data[3:7] = -qpos_torch.data[3:7]
+
+                # Clamp joint angles to their limits (from MuJoCo model)
+                # Apply limits to joints (qpos[7:16])
+                for i in range(7, 9):  # 7 arm joints + 2 finger joints
+                    qpos_idx = 7 + i
+                    if qpos_idx < len(qpos_init) and optimize_mask[qpos_idx]:
+                        qpos_torch.data[qpos_idx] = torch.clamp(
+                            qpos_torch.data[qpos_idx],
+                            franka_joint_limits[i, 0],
+                            franka_joint_limits[i, 1]
+                        )
+            elif agent_type == 'Adroit':
+                # Adroit uses Euler angles for forearm rotation (ARRx, ARRy, ARRz at indices 3:6)
+                # No quaternion normalization needed - just clamp rotation angles to reasonable range
+                if optimize_wrist:
+                    # Clamp forearm rotation angles to [-pi, pi]
+                    for i in range(3, 6):
+                        if optimize_mask[i]:
+                            qpos_torch.data[i] = torch.clamp(
+                                qpos_torch.data[i],
+                                -np.pi,
+                                np.pi
+                            )
+                # Note: Hand joint limits would go here if needed, but typically
+                # MuJoCo handles this through the model definition
             else:  # Allegro_right
                 # Normalize wrist quaternion only
                 if optimize_mask[3] and optimize_mask[4] and optimize_mask[5] and optimize_mask[6]:
