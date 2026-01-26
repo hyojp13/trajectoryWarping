@@ -138,6 +138,7 @@ if __name__ == "__main__":
   TASK = config['task']
   scene_file = config['scene_file']
   barriers = config['barriers']
+  visuals = config.get('visuals', [])
   learning_rate = config['learning_rate']
   n_iter = config['n_iter']
   first_frame_iter = config['first_frame_iter']
@@ -198,8 +199,20 @@ if __name__ == "__main__":
   barriers = [tuple(b) if isinstance(b, list) else b for b in barriers]
   barriers = process_barriers(barriers) # apply scale and pos to obj barriers
 
-  # add mesh barriers to MuJoCo
-  xml_string = add_mesh_barriers_to_xml(scene_file, barriers)
+  # Convert visuals from config format to tuples and copy mesh files
+  import os
+  import shutil
+  os.makedirs('meshes', exist_ok=True)
+  visuals = [tuple(v) if isinstance(v, list) else v for v in visuals]
+  for visual in visuals:
+    if isinstance(visual, tuple) and len(visual) >= 2:
+      visual_mesh_path = visual[0]
+      visual_mesh_dest = f"meshes/{os.path.basename(visual_mesh_path)}"
+      if not os.path.exists(visual_mesh_dest):
+        shutil.copy(visual_mesh_path, visual_mesh_dest)
+
+  # add mesh barriers and visuals to MuJoCo
+  xml_string = add_mesh_barriers_to_xml(scene_file, barriers, visuals)
 
   object = trimesh.load(object_mesh_file, process=False)
 

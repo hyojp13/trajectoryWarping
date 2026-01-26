@@ -407,7 +407,6 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
                         )
             elif agent_type == 'Adroit':
                 # Adroit uses Euler angles for forearm rotation (ARRx, ARRy, ARRz at indices 3:6)
-                # No quaternion normalization needed - just clamp rotation angles to reasonable range
                 if optimize_wrist:
                     # Clamp forearm rotation angles to [-pi, pi]
                     for i in range(3, 6):

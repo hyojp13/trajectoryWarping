@@ -46,22 +46,25 @@ def shift_obj(input_file, offset):
     mesh.apply_translation(new_offset)
     mesh.export(input_file)
 
-def add_mesh_barriers_to_xml(scene_file, barriers):
+def add_mesh_barriers_to_xml(scene_file, barriers, visuals=None):
     """
-    Add mesh barriers to MuJoCo XML string.
+    Add mesh barriers and visuals to MuJoCo XML string.
 
     Args:
         scene_file: Path to the XML scene file
         barriers: List of barriers (already processed with process_barriers)
+        visuals: List of visual-only objects (same format as barriers but no collision)
 
     Returns:
-        xml_string: Modified XML string with mesh barriers added
+        xml_string: Modified XML string with mesh barriers and visuals added
     """
     import os
+    from scipy.spatial.transform import Rotation as R
 
     with open(scene_file) as f:
         xml_string = f.read()
 
+    # Add barriers
     for i, barrier in enumerate(barriers):
         if isinstance(barrier, str):
             # Path to your .obj file
@@ -88,6 +91,51 @@ def add_mesh_barriers_to_xml(scene_file, barriers):
                 xml_string = xml_string.replace("</worldbody>", mesh_body + "\n</worldbody>")
             else:
                 raise ValueError("No <worldbody> block found in XML.")
+
+    # Add visuals
+    if visuals:
+        for i, visual in enumerate(visuals):
+            if isinstance(visual, tuple) and len(visual) >= 2:
+                mesh_path = visual[0]
+                config = visual[1]
+
+                # Extract mesh file name
+                mesh_file = os.path.basename(mesh_path)
+                mesh_name = f"visual_mesh_{i}"
+
+                # Get position and scale
+                pos = config.get('pos', [0, 0, 0])
+                scale = config.get('scale', [1, 1, 1])
+                rotation = config.get('rotation', [0, 0, 0])  # euler angles in degrees
+                rgba = config.get('rgba', [0.8, 0.8, 0.8, 1])
+
+                # Convert euler angles to quaternion
+                if rotation != [0, 0, 0]:
+                    rot = R.from_euler('xyz', np.radians(rotation))
+                    quat = rot.as_quat()  # [x, y, z, w]
+                    quat_str = f'quat="{quat[3]} {quat[0]} {quat[1]} {quat[2]}"'
+                else:
+                    quat_str = ""
+
+                mesh_asset = f"""
+          <mesh name="{mesh_name}" file="{mesh_file}" scale="{scale[0]} {scale[1]} {scale[2]}"/>
+      """
+
+                mesh_body = f"""
+          <body name="visual_body_{i}" pos="{pos[0]} {pos[1]} {pos[2]}" {quat_str}>
+              <geom type="mesh" mesh="{mesh_name}" rgba="{rgba[0]} {rgba[1]} {rgba[2]} {rgba[3]}" contype="0" conaffinity="0" group="1"/>
+          </body>
+      """
+
+                if "</asset>" in xml_string:
+                    xml_string = xml_string.replace("</asset>", mesh_asset + "\n</asset>")
+                else:
+                    raise ValueError("No <asset> block found in XML.")
+
+                if "</worldbody>" in xml_string:
+                    xml_string = xml_string.replace("</worldbody>", mesh_body + "\n</worldbody>")
+                else:
+                    raise ValueError("No <worldbody> block found in XML.")
 
     return xml_string
 

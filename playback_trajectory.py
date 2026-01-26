@@ -65,6 +65,7 @@ if __name__ == "__main__":
     scene_file = config['scene_file']
     object_mesh_file = config['object_mesh_file']
     barriers = config.get('barriers', [])
+    visuals = config.get('visuals', [])
 
     # Process waypoints
     waypts_raw = config.get('waypts', [])
@@ -89,10 +90,10 @@ if __name__ == "__main__":
         f.write(object_xml_content)
 
     # Copy the object mesh to the meshes directory if needed
+    import shutil
+    os.makedirs('meshes', exist_ok=True)
     mesh_dest = f"meshes/{os.path.basename(object_mesh_file)}"
     if not os.path.exists(mesh_dest):
-        import shutil
-        os.makedirs('meshes', exist_ok=True)
         shutil.copy(object_mesh_file, mesh_dest)
 
     build_env_xml(AGENT, TASK)
@@ -104,8 +105,24 @@ if __name__ == "__main__":
     barriers = process_barriers(barriers)
     # barriers = correct_barrier_axes(barriers)
 
-    # Add mesh barriers to XML
-    xml_string = add_mesh_barriers_to_xml(scene_file, barriers)
+    # Process visuals and copy mesh files
+    visuals = [tuple(v) if isinstance(v, list) else v for v in visuals]
+    for visual in visuals:
+        if isinstance(visual, tuple) and len(visual) >= 2:
+            visual_mesh_path = visual[0]
+            visual_mesh_dest = f"meshes/{os.path.basename(visual_mesh_path)}"
+            if not os.path.exists(visual_mesh_dest):
+                shutil.copy(visual_mesh_path, visual_mesh_dest)
+            print(f"Visual: {visual_mesh_path} -> {visual_mesh_dest}")
+
+    # Add mesh barriers and visuals to XML
+    print(f"Adding {len(visuals)} visuals to XML")
+    xml_string = add_mesh_barriers_to_xml(scene_file, barriers, visuals)
+
+    # Debug: save XML to see if visual was added
+    with open('debug_scene.xml', 'w') as f:
+        f.write(xml_string)
+    print("XML written to debug_scene.xml for inspection")
 
     # Load saved trajectories
     trajectory_dir = "final_trajectories"
