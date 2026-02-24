@@ -26,7 +26,18 @@ def get_hand_link_mesh(hand_link_idx):
     Returns:
         trimesh.Trimesh object
     """
-    # Map hand link indices to mesh names
+    # For Allegro hand, use the following
+    # hand_link_names = [
+    #     'base_link', 'link_12_right', 'link_15_tip',
+    #     'link_0', 'link_0', 'link_0',
+    #     'link_1', 'link_1', 'link_1',
+    #     'link_2', 'link_2', 'link_2',
+    #     'link_3', 'link_3', 'link_3',
+    #     'link_13', 'link_14', 'link_15',
+    #     'link_3_tip', 'link_3_tip', 'link_3_tip'
+    # ]
+    
+    # Map MANO hand link indices to mesh names
     # Based on the contact file ordering:
     # 0: index1, 1: index2, 2: index3
     # 3: middle1, 4: middle2, 5: middle3
