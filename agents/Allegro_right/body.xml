@@ -14,19 +14,19 @@
             <!-- Thumb -->
             <body name="allegro_th_base" gravcomp="1" pos="-0.0182 0.019333 -0.045987" quat="-0.396524 0.599668 0.445978 0.533171">
                 <joint name="thj0" class="thumb_base"/>
-                <geom class="visual" mesh="link_12.0_right"/>
+                <geom class="visual" mesh="link_12_right"/>
                 <geom class="thumb_base_collision" name="agent_collider_thumb_base_collision"/>
                 <body name="allegro_th_proximal" gravcomp="1" pos="-0.027 0.005 0.0399">
                     <joint name="thj1" class="thumb_proximal"/>
-                    <geom class="visual" mesh="link_13.0"/>
+                    <geom class="visual" mesh="link_13"/>
                     <geom class="thumb_proximal_collision" name="agent_collider_thumb_proximal_collision"/>
                     <body name="allegro_th_medial" gravcomp="1" pos="0 0 0.0177">
                         <joint name="thj2" class="thumb_medial"/>
-                        <geom class="visual" mesh="link_14.0"/>
+                        <geom class="visual" mesh="link_14"/>
                         <geom class="thumb_medial_collision" name="agent_collider_thumb_medial_collision"/>
                         <body name="allegro_th_distal" gravcomp="1" pos="0 0 0.0514">
                             <joint name="thj3" class="thumb_distal"/>
-                            <geom class="visual" mesh="link_15.0"/>
+                            <geom class="visual" mesh="link_15"/>
                             <geom class="thumb_distal_collision" name="agent_collider_thumb_distal_collision"/>
                             <body name="allegro_th_tip" gravcomp="1" pos="0 0 0.0423">
                                 <geom class="thumbtip_visual"/>
