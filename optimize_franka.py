@@ -11,6 +11,9 @@ import mujoco
 import mujoco.viewer
 import time
 import trimesh
+import cv2
+import os
+import re
 from scipy.spatial.transform import Rotation as R
 
 from differentiable_fk import extract_kinematic_tree, precompute_kinematic_tree_tensors, precompute_local_hand_contacts
@@ -262,6 +265,148 @@ def create_franka_xml_for_optimization():
     return xml_string
 
 
+def render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, output_dir,
+                   object_mesh=None, object_contacts=None, hand_contacts=None,
+                   hand_components=None, hand_component_offset=0, barriers=None, waypts=None):
+    """Render specific frames to images using offscreen renderer."""
+    from handContacts import get_local_pos, local_to_global
+
+    renderer = mujoco.Renderer(m, height=1080, width=1920)
+
+    # Set up visualization options
+    scene_option = mujoco.MjvOption()
+    scene_option.geomgroup[0] = 0
+    scene_option.geomgroup[1] = 1   # scene
+    scene_option.geomgroup[2] = 1   # hand
+    scene_option.geomgroup[5] = 1   # object
+    scene_option.frame = mujoco.mjtFrame.mjFRAME_NONE
+    for i in range(6):
+        scene_option.sitegroup[i] = 0
+
+    # Set up camera
+    cam = mujoco.MjvCamera()
+    cam.azimuth = -178.5
+    cam.elevation = -7.3
+    cam.distance = 3.982
+    cam.lookat[:] = [0.566, -3.827, 1.033]
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for frame_idx in frames_to_render:
+        if frame_idx >= n_frames:
+            print(f"Skipping frame {frame_idx} (out of range, max: {n_frames-1})")
+            continue
+
+        d.qpos[:16] = hand_qpos[:, frame_idx]
+        if m.nmocap > 0:
+            d.mocap_pos[0] = object_qpos[:3, frame_idx]
+            d.mocap_quat[0] = object_qpos[3:7, frame_idx]
+        mujoco.mj_forward(m, d)
+
+        renderer.update_scene(d, camera=cam, scene_option=scene_option)
+
+        geometry_count = renderer.scene.ngeom
+
+        # Object path (green spheres up to current frame)
+        for j in range(frame_idx + 1):
+            mujoco.mjv_initGeom(
+                renderer.scene.geoms[geometry_count + j],
+                type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                size=[0.005, 0, 0],
+                pos=object_qpos[:3, j],
+                mat=np.eye(3).flatten(),
+                rgba=np.array([0, 1, 0, 1]))
+        geometry_count += frame_idx + 1
+
+        # Object contacts (red spheres)
+        if object_contacts is not None and object_mesh is not None and frame_idx < len(object_contacts):
+            quat_scipy = np.array([object_qpos[4, frame_idx], object_qpos[5, frame_idx],
+                                   object_qpos[6, frame_idx], object_qpos[3, frame_idx]])
+            rotation_matrix = R.from_quat(quat_scipy).as_matrix()
+
+            for contact_idx in object_contacts[frame_idx]:
+                local_vertex = object_mesh.vertices[contact_idx]
+                world_vertex = rotation_matrix @ local_vertex + object_qpos[:3, frame_idx]
+                mujoco.mjv_initGeom(
+                    renderer.scene.geoms[geometry_count],
+                    type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                    size=[0.008, 0, 0],
+                    pos=world_vertex,
+                    mat=np.eye(3).flatten(),
+                    rgba=np.array([1, 0, 0, 1]))
+                geometry_count += 1
+
+        # Hand contacts (green spheres)
+        if hand_contacts is not None and hand_components is not None:
+            for hand_component_id in hand_contacts:
+                contacts_this_frame = hand_contacts[hand_component_id][frame_idx]
+                if contacts_this_frame is None:
+                    continue
+                component_faces, component_verts = hand_components[hand_component_id]
+                body_id_vis = hand_component_id + hand_component_offset
+
+                for contact in contacts_this_frame:
+                    face_id, bary_coords, object_contact_idx = contact
+                    local_pos = get_local_pos(face_id, bary_coords, component_faces, component_verts)
+                    global_pos = local_to_global(local_pos, body_id_vis, d)
+                    mujoco.mjv_initGeom(
+                        renderer.scene.geoms[geometry_count],
+                        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                        size=[0.008, 0, 0],
+                        pos=global_pos,
+                        mat=np.eye(3).flatten(),
+                        rgba=np.array([0, 1, 0, 1]))
+                    geometry_count += 1
+
+        # Barriers
+        if barriers is not None:
+            for barrier in barriers:
+                if isinstance(barrier, str):
+                    continue
+                barr_type, config = barrier
+                if barr_type == 'rect':
+                    mujoco.mjv_initGeom(
+                        renderer.scene.geoms[geometry_count],
+                        type=mujoco.mjtGeom.mjGEOM_BOX,
+                        size=np.array(config['dims']) / 2,
+                        pos=config['pos'],
+                        mat=np.eye(3).flatten(),
+                        rgba=np.array([0.5, 0.5, 0.5, 0.7]))
+                    geometry_count += 1
+                elif barr_type == 'sphere':
+                    mujoco.mjv_initGeom(
+                        renderer.scene.geoms[geometry_count],
+                        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                        size=[config['rad'], 0, 0],
+                        pos=config['pos'],
+                        mat=np.eye(3).flatten(),
+                        rgba=np.array([0.5, 0.5, 0.5, 0.7]))
+                    geometry_count += 1
+
+        # Waypoints (black spheres)
+        if waypts is not None:
+            for j in range(len(waypts)):
+                mujoco.mjv_initGeom(
+                    renderer.scene.geoms[geometry_count],
+                    type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                    size=[0.01, 0, 0],
+                    pos=waypts[j][0],
+                    mat=np.eye(3).flatten(),
+                    rgba=np.array([1, 0, 0, 1]))
+                geometry_count += 1
+
+        renderer.scene.ngeom = geometry_count
+
+        frame = renderer.render()
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+        output_path = os.path.join(output_dir, f"franka_optimized_frame_{frame_idx:04d}.png")
+        cv2.imwrite(output_path, frame_bgr)
+        print(f"Saved: {output_path}")
+
+    renderer.close()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Optimize Franka trajectory with contact constraints')
     parser.add_argument('pkl_path', type=str, help='Path to pickle file with trajectory data')
@@ -269,6 +414,16 @@ if __name__ == "__main__":
     parser.add_argument('--n-iter', type=int, default=100, help='Number of iterations (default: 100)')
     parser.add_argument('--device', type=str, default='cpu',
                        help='Device for optimization: cpu, cuda, or mps (default: cpu)')
+    parser.add_argument('--render', action='store_true',
+                       help='Render frames to images after optimization')
+    parser.add_argument('--render-output', type=str, default='visuals/franka_optimized',
+                       help='Output directory for rendered frames')
+    parser.add_argument('--render-start', type=int, default=0,
+                       help='First frame to render (default: 0)')
+    parser.add_argument('--render-end', type=int, default=None,
+                       help='Last frame to render (default: all frames)')
+    parser.add_argument('--render-step', type=int, default=10,
+                       help='Frame step for rendering (default: 10)')
     args = parser.parse_args()
 
     # Load trajectory
@@ -363,8 +518,8 @@ if __name__ == "__main__":
     # })
 
     # barriers = [wall_barrier, dest_box_barrier]
-    barriers = [wall_barrier]
-    # barriers = []
+    # barriers = [wall_barrier]
+    barriers = []
 
     # Define trajectory waypoints
     # Format: (relative_pos, timestep_start, timestep_end, optional_rotation)
@@ -387,10 +542,10 @@ if __name__ == "__main__":
     # Note: Waypoint times must be within the contact frame range [startIdx/n_frames, endIdx/n_frames]
     # With startIdx=85 and n_frames=158, the minimum time is 85/158 = 0.538
     waypts = [
-        #(np.array([0.0, 0.0, 0.15]), 0.6, 0.6),
-        (np.array([0.0, 0.3, 0.4]), 0.8, 0.6)
+        (np.array([0.0, 0.0, 0.15]), 0.6, 0.5),
+        (np.array([-0.1, 0.3, 0.4]), 0.7, 0.65),
         # (np.array([0.15, 0.15, 0.0]), 0.7, 0.7),
-        # (np.array([0.15, 0.0, 0.0]), 0.8, 0.8)
+        (np.array([0.15, 0.2, 0.2]), 0.8, 0.85)
     ]
 
     # Process waypoints: convert relative positions to absolute positions
@@ -652,7 +807,6 @@ if __name__ == "__main__":
     print("Trajectory smoothing complete!")
 
     # Save optimized trajectory
-    import os
     output_dir = "final_trajectories"
     os.makedirs(output_dir, exist_ok=True)
 
@@ -693,6 +847,13 @@ if __name__ == "__main__":
     root = tree.getroot()
     xml_vis = ET.tostring(root, encoding='unicode')
 
+    # Add offscreen framebuffer size for rendering
+    mujoco_tag_match = re.search(r'<mujoco[^>]*>', xml_vis)
+    if mujoco_tag_match:
+        insert_pos = mujoco_tag_match.end()
+        visual_settings = '\n  <visual>\n    <global offwidth="1920" offheight="1080"/>\n  </visual>'
+        xml_vis = xml_vis[:insert_pos] + visual_settings + xml_vis[insert_pos:]
+
     m_vis = mujoco.MjModel.from_xml_string(xml_vis)
     d_vis = mujoco.MjData(m_vis)
 
@@ -721,6 +882,20 @@ if __name__ == "__main__":
 
     dt = 0.03
     m_vis.opt.timestep = dt
+
+    if args.render:
+        render_end = args.render_end if args.render_end is not None else n_frames
+        frames_to_render = list(range(args.render_start, render_end, args.render_step))
+        print(f"\nRendering {len(frames_to_render)} frames to {args.render_output}/")
+        render_frames(m_vis, d_vis, hand_qpos, object_qpos, n_frames, frames_to_render,
+                      args.render_output, object_mesh=object_mesh,
+                      object_contacts=object_contacts, hand_contacts=hand_contacts,
+                      hand_components=hand_components,
+                      hand_component_offset=hand_component_offset_vis,
+                      barriers=barriers, waypts=waypts)
+        print(f"\nAll images saved to: {args.render_output}/")
+
+    print("\nLaunching viewer...")
 
     with mujoco.viewer.launch_passive(m_vis, d_vis) as viewer:
         i = 0
@@ -861,7 +1036,7 @@ if __name__ == "__main__":
                         size=[0.01, 0, 0],
                         pos=waypts[j][0],
                         mat=np.eye(3).flatten(),
-                        rgba=np.array([0, 0, 0, 1])
+                        rgba=np.array([0, 0, 1, 1])
                     )
                     geometry_count += 1
 

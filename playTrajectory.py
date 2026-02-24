@@ -1,9 +1,12 @@
 import time
+import os
+import re
 
 import mujoco
 import mujoco.viewer
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+import cv2
 
 import torch
 import trimesh
@@ -19,7 +22,7 @@ from smoothspline import *
 from handContacts import *
 from differentiable_fk import *
 from optimize_contacts import *
-from load_contacts import load_contacts_lcexp
+from load_contacts import load_contacts_lcexp, get_contact_frame_range
 
 AGENT="trajectories"
 TASK="fryingpan_cook"
@@ -104,6 +107,82 @@ def rotate_keyframe_angles(keyframes, rotation):
   return keyframes_modified
 
 
+def render_frames(m, d, qpos, object_qpos, frames, frames_to_render, output_dir,
+                   contact_start=0, contact_end=None):
+    """Render specific frames to images using offscreen renderer."""
+    if contact_end is None:
+        contact_end = frames
+
+    renderer = mujoco.Renderer(m, height=1080, width=1920)
+
+    # Set up visualization options
+    scene_option = mujoco.MjvOption()
+    scene_option.geomgroup[0] = 0
+    scene_option.geomgroup[1] = 1   # scene
+    scene_option.geomgroup[2] = 1   # hand
+    scene_option.geomgroup[5] = 1   # object
+    scene_option.frame = mujoco.mjtFrame.mjFRAME_NONE
+    for i in range(6):
+        scene_option.sitegroup[i] = 0
+
+    # Set up camera
+    cam = mujoco.MjvCamera()
+    cam.azimuth = -179.7
+    cam.elevation = -6.0
+    cam.distance = 0.703
+    cam.lookat[:] = [2.427, -0.396, 1.124]
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for frame_idx in frames_to_render:
+        if frame_idx >= frames:
+            print(f"Skipping frame {frame_idx} (out of range, max: {frames-1})")
+            continue
+
+        d.qpos = qpos[:, frame_idx]
+        d.mocap_pos = object_qpos[:3, frame_idx]
+        d.mocap_quat = object_qpos[3:, frame_idx]
+        mujoco.mj_forward(m, d)
+
+        renderer.update_scene(d, camera=cam, scene_option=scene_option)
+
+        geometry_count = renderer.scene.ngeom
+
+        # Object path (matte green spheres, contact region only, up to current frame)
+        draw_end = min(frame_idx + 1, contact_end + 1)
+        for j in range(contact_start, draw_end, 1):
+            mujoco.mjv_initGeom(
+                renderer.scene.geoms[geometry_count],
+                type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                size=[0.005, 0, 0],
+                pos=object_qpos[:3, j],
+                mat=np.eye(3).flatten(),
+                rgba=np.array([0.2, 0.8, 0.2, 1]))
+            geometry_count += 1
+
+        # Hand path (matte blue spheres, contact region only, up to current frame)
+        for j in range(contact_start, draw_end, 1):
+            mujoco.mjv_initGeom(
+                renderer.scene.geoms[geometry_count],
+                type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                size=[0.005, 0, 0],
+                pos=qpos[:3, j],
+                mat=np.eye(3).flatten(),
+                rgba=np.array([0.2, 0.2, 0.8, 1]))
+            geometry_count += 1
+
+        renderer.scene.ngeom = geometry_count
+
+        frame = renderer.render()
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+        output_path = os.path.join(output_dir, f"trajectory_frame_{frame_idx:04d}.png")
+        cv2.imwrite(output_path, frame_bgr)
+        print(f"Saved: {output_path}")
+
+    renderer.close()
+
+
 if __name__ == "__main__":
   build_env_xml(AGENT, TASK)
 
@@ -113,7 +192,15 @@ if __name__ == "__main__":
 
   frames = 1000
   
-  m = mujoco.MjModel.from_xml_path('kitchen2.xml')
+  # Load model with offscreen framebuffer for rendering
+  with open('kitchen2.xml', 'r') as f:
+    xml_string = f.read()
+  mujoco_tag_match = re.search(r'<mujoco[^>]*>', xml_string)
+  if mujoco_tag_match:
+    insert_pos = mujoco_tag_match.end()
+    visual_settings = '\n  <visual>\n    <global offwidth="1920" offheight="1080"/>\n  </visual>'
+    xml_string = xml_string[:insert_pos] + visual_settings + xml_string[insert_pos:]
+  m = mujoco.MjModel.from_xml_string(xml_string)
   d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
 
@@ -122,13 +209,14 @@ if __name__ == "__main__":
   #   num_vertices = sum(1 for line in f if line.startswith('v '))
   # print("Number of vertices:", num_vertices)
 
-  object = trimesh.load('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', process=False)
+  object = trimesh.load('/Users/hjp/desktop/exports/s1/cubemedium_inspect_1_full_export_objectmesh.obj', process=False)
   
   # Load contacts from .lcexp file
   contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp')
+  contact_start, contact_end = get_contact_frame_range(contacts_lcexp)
 
-  if len(contacts_lcexp) != frames:
-    raise Exception("Number of contacts in .lcexp file does not match number of frames")
+  # if len(contacts_lcexp) != frames:
+  #   raise Exception("Number of contacts in .lcexp file does not match number of frames")
 
   sim_time = np.linspace(0, 1, frames)
 
@@ -164,76 +252,98 @@ if __name__ == "__main__":
   
   object_contacts = [None] * frames
   
-  # Convert contacts from .lcexp format to playTrajectory format
-  for frame_idx in range(frames):
-    frame_contacts = contacts_lcexp[frame_idx]  # List of (obj_vertex, hand_link_idx, (face_idx, bary1, bary2, bary3))
+  # # Convert contacts from .lcexp format to playTrajectory format
+  # for frame_idx in range(frames):
+  #   frame_contacts = contacts_lcexp[frame_idx]  # List of (obj_vertex, hand_link_idx, (face_idx, bary1, bary2, bary3))
     
-    if len(frame_contacts) == 0:
-      object_contacts[frame_idx] = np.array([], dtype=np.int64)
-      continue
+  #   if len(frame_contacts) == 0:
+  #     object_contacts[frame_idx] = np.array([], dtype=np.int64)
+  #     continue
     
-    # Extract object vertex indices for this frame
-    obj_vertex_indices = []
-    for contact in frame_contacts:
-      obj_vertex_idx = contact[0]
-      obj_vertex_indices.append(obj_vertex_idx)
+  #   # Extract object vertex indices for this frame
+  #   obj_vertex_indices = []
+  #   for contact in frame_contacts:
+  #     obj_vertex_idx = contact[0]
+  #     obj_vertex_indices.append(obj_vertex_idx)
     
-    object_contacts[frame_idx] = np.array(obj_vertex_indices, dtype=np.int64)
+  #   object_contacts[frame_idx] = np.array(obj_vertex_indices, dtype=np.int64)
     
-    # Create mapping from object vertex index to index in object_contacts array
-    obj_vertex_to_idx = {v: i for i, v in enumerate(obj_vertex_indices)}
+  #   # Create mapping from object vertex index to index in object_contacts array
+  #   obj_vertex_to_idx = {v: i for i, v in enumerate(obj_vertex_indices)}
     
-    # Group contacts by hand component
-    contacts_by_component = {}
-    for contact in frame_contacts:
-      obj_vertex_idx, hand_link_idx, hand_contact_info = contact
-      face_idx, bary1, bary2, bary3 = hand_contact_info
+  #   # Group contacts by hand component
+  #   contacts_by_component = {}
+  #   for contact in frame_contacts:
+  #     obj_vertex_idx, hand_link_idx, hand_contact_info = contact
+  #     face_idx, bary1, bary2, bary3 = hand_contact_info
       
-      hand_component_id = hand_link_idx
+  #     hand_component_id = hand_link_idx
       
-      if hand_component_id < 0 or hand_component_id >= hand_components_len:
-        raise Exception("Hand component id is out of range at frame " + str(frame_idx))
+  #     if hand_component_id < 0 or hand_component_id >= hand_components_len:
+  #       raise Exception("Hand component id is out of range at frame " + str(frame_idx))
       
-      # Get object_contact_idx (index into object_contacts[frame_idx])
-      object_contact_idx = obj_vertex_to_idx[obj_vertex_idx]
+  #     # Get object_contact_idx (index into object_contacts[frame_idx])
+  #     object_contact_idx = obj_vertex_to_idx[obj_vertex_idx]
       
-      contact_tuple = (face_idx, (bary1, bary2, bary3), object_contact_idx)
+  #     contact_tuple = (face_idx, (bary1, bary2, bary3), object_contact_idx)
       
-      if hand_component_id not in contacts_by_component:
-        contacts_by_component[hand_component_id] = []
-      contacts_by_component[hand_component_id].append(contact_tuple)
+  #     if hand_component_id not in contacts_by_component:
+  #       contacts_by_component[hand_component_id] = []
+  #     contacts_by_component[hand_component_id].append(contact_tuple)
     
-    # Assign to hand_contacts
-    for hand_component_id in contacts_by_component:
-      hand_contacts[hand_component_id][frame_idx] = contacts_by_component[hand_component_id]
+  #   # Assign to hand_contacts
+  #   for hand_component_id in contacts_by_component:
+  #     hand_contacts[hand_component_id][frame_idx] = contacts_by_component[hand_component_id]
   
-  contacts = object_contacts.copy()
+  # contacts = object_contacts.copy()
 
-  # check that all frames have all object contacts covered
-  for i in range(frames):
-    contact_count = len(object_contacts[i])
-    contact_checker = [False] * contact_count
+  # # check that all frames have all object contacts covered
+  # for i in range(frames):
+  #   contact_count = len(object_contacts[i])
+  #   contact_checker = [False] * contact_count
 
-    hand_contact_count = 0
-    for j in range(hand_components_len):
-      component_contacts = hand_contacts[j][i]
-      if component_contacts is None:
-        continue
-      for k in component_contacts:
-        contact_checker[k[2]] = True
-        hand_contact_count += 1
+  #   hand_contact_count = 0
+  #   for j in range(hand_components_len):
+  #     component_contacts = hand_contacts[j][i]
+  #     if component_contacts is None:
+  #       continue
+  #     for k in component_contacts:
+  #       contact_checker[k[2]] = True
+  #       hand_contact_count += 1
     
-    if False in contact_checker:
-      raise Exception("Missing contact at frame " + str(i))
-    if hand_contact_count > contact_count:
-      raise Exception("More hand contact count than object contact count at frame " + str(i))
+  #   if False in contact_checker:
+  #     raise Exception("Missing contact at frame " + str(i))
+  #   if hand_contact_count > contact_count:
+  #     raise Exception("More hand contact count than object contact count at frame " + str(i))
 
   
+  # Render frames if --render flag is passed
+  import sys
+  if '--render' in sys.argv:
+    render_start = 0
+    render_end = frames
+    render_step = 10
+    render_output = 'visuals/trajectory_frames'
+    for idx, arg in enumerate(sys.argv):
+      if arg == '--render-output' and idx + 1 < len(sys.argv):
+        render_output = sys.argv[idx + 1]
+      if arg == '--render-start' and idx + 1 < len(sys.argv):
+        render_start = int(sys.argv[idx + 1])
+      if arg == '--render-end' and idx + 1 < len(sys.argv):
+        render_end = int(sys.argv[idx + 1])
+      if arg == '--render-step' and idx + 1 < len(sys.argv):
+        render_step = int(sys.argv[idx + 1])
+    frames_to_render = list(range(render_start, render_end, render_step))
+    print(f"Rendering {len(frames_to_render)} frames to {render_output}/")
+    render_frames(m, d, qpos, object_qpos, frames, frames_to_render, render_output,
+                  contact_start=contact_start, contact_end=contact_end)
+    print(f"All images saved to: {render_output}/")
+
   frame_pts = []
   obj_frame_pts = []
   obj_orig_frame_pts = []
   obj_retarget_frame_pts = []
-  
+
 
   with mujoco.viewer.launch_passive(m, d) as viewer:
     # compute hand component meshes
@@ -263,16 +373,16 @@ if __name__ == "__main__":
 
       # process local hand contacts
       # local_hand_contacts: dict of hand component id -> list of local contact positions at frame i
-      local_hand_contacts = {}
-      for hand_component_id in range(hand_components_len):
-        contacts_this_frame = hand_contacts[hand_component_id][i % frames]
-        if contacts_this_frame is not None:
-          local_hand_contacts[hand_component_id] = []
-          for contact in contacts_this_frame:
-            face_id, bary_coords, object_contact_idx = contact
-            local_pos = get_local_pos(face_id, bary_coords, hand_components[hand_component_id][0], hand_components[hand_component_id][1])
-            local_hand_contacts[hand_component_id].append(local_pos)
-          local_hand_contacts[hand_component_id] = np.array(local_hand_contacts[hand_component_id])
+      # local_hand_contacts = {}
+      # for hand_component_id in range(hand_components_len):
+      #   contacts_this_frame = hand_contacts[hand_component_id][i % frames]
+      #   if contacts_this_frame is not None:
+      #     local_hand_contacts[hand_component_id] = []
+      #     for contact in contacts_this_frame:
+      #       face_id, bary_coords, object_contact_idx = contact
+      #       local_pos = get_local_pos(face_id, bary_coords, hand_components[hand_component_id][0], hand_components[hand_component_id][1])
+      #       local_hand_contacts[hand_component_id].append(local_pos)
+      #     local_hand_contacts[hand_component_id] = np.array(local_hand_contacts[hand_component_id])
 
 
       # convert local vertex coordinates to world coordinates
@@ -314,43 +424,47 @@ if __name__ == "__main__":
         )
       geometry_count += len(obj_frame_pts)
 
-      if isinstance(contacts[i], np.ndarray):
-        for j in range(len(contacts[i])):
-          local_vertex = object.vertices[contacts[i][j]]
-          world_vertex = (rotation_matrix @ local_vertex + d.mocap_pos)[0]
+      # if isinstance(contacts[i], np.ndarray):
+      #   for j in range(len(contacts[i])):
+      #     local_vertex = object.vertices[contacts[i][j]]
+      #     world_vertex = (rotation_matrix @ local_vertex + d.mocap_pos)[0]
 
-          mujoco.mjv_initGeom(
-              viewer.user_scn.geoms[j + geometry_count],
-              type=mujoco.mjtGeom.mjGEOM_SPHERE,
-              size=[0.001, 0, 0],
-              pos=np.array(world_vertex),
-              mat=np.eye(3).flatten(),
-              rgba=np.array([1, 0, 0, 1])
-          )
-          # print(object.vertices[contacts[i][j]])
-        geometry_count += len(contacts[i])
+      #     mujoco.mjv_initGeom(
+      #         viewer.user_scn.geoms[j + geometry_count],
+      #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+      #         size=[0.001, 0, 0],
+      #         pos=np.array(world_vertex),
+      #         mat=np.eye(3).flatten(),
+      #         rgba=np.array([1, 0, 0, 1])
+      #     )
+      #     # print(object.vertices[contacts[i][j]])
+      #   geometry_count += len(contacts[i])
 
 
-      for j in local_hand_contacts: # iterate over hand components
-        for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
-          local_vertex = local_hand_contacts[j][k]
-          global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
+      # for j in local_hand_contacts: # iterate over hand components
+      #   for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
+      #     local_vertex = local_hand_contacts[j][k]
+      #     global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
 
-          mujoco.mjv_initGeom(
-              viewer.user_scn.geoms[k + geometry_count],
-              type=mujoco.mjtGeom.mjGEOM_SPHERE,
-              size=[0.001, 0, 0],
-              pos=np.array(global_vertex),
-              mat=np.eye(3).flatten(),
-              rgba=np.array([0, 1, 0, 1])
-          )
-        geometry_count += len(local_hand_contacts[j])
+      #     mujoco.mjv_initGeom(
+      #         viewer.user_scn.geoms[k + geometry_count],
+      #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+      #         size=[0.001, 0, 0],
+      #         pos=np.array(global_vertex),
+      #         mat=np.eye(3).flatten(),
+      #         rgba=np.array([0, 1, 0, 1])
+      #     )
+      #   geometry_count += len(local_hand_contacts[j])
       
       viewer.user_scn.ngeom = geometry_count
 
 
       viewer.sync()
       i += 1
+
+      if i % 30 == 0:
+        print(f"Camera: azimuth={viewer.cam.azimuth:.1f}, elevation={viewer.cam.elevation:.1f}, "
+              f"distance={viewer.cam.distance:.3f}, lookat=[{viewer.cam.lookat[0]:.3f}, {viewer.cam.lookat[1]:.3f}, {viewer.cam.lookat[2]:.3f}]")
 
       time_until_next_step = m.opt.timestep - (time.time() - step_start)
       if time_until_next_step > 0:

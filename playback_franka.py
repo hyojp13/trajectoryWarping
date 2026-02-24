@@ -16,6 +16,8 @@ from scipy.spatial.transform import Rotation as R
 import mujoco
 import mujoco.viewer
 import torch
+import cv2
+import os
 
 
 def load_franka_trajectory(pkl_path):
@@ -187,6 +189,80 @@ def create_franka_xml_with_menagerie(object_mesh_path=None, use_kitchen=True):
         return xml_string
 
 
+def render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, output_dir):
+    """Render specific frames to images using offscreen renderer."""
+    # Add offscreen framebuffer size
+    renderer = mujoco.Renderer(m, height=1080, width=1920)
+
+    # Set up visualization options
+    scene_option = mujoco.MjvOption()
+    scene_option.geomgroup[0] = 0
+    scene_option.geomgroup[1] = 1   # scene
+    scene_option.geomgroup[2] = 1   # hand
+    scene_option.geomgroup[5] = 1   # object
+    scene_option.frame = mujoco.mjtFrame.mjFRAME_NONE
+    for i in range(6):
+        scene_option.sitegroup[i] = 0
+
+    # Set up camera
+    cam = mujoco.MjvCamera()
+    cam.azimuth = -178.5
+    cam.elevation = -7.3
+    cam.distance = 3.982
+    cam.lookat[:] = [0.566, -3.827, 1.033]
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for frame_idx in frames_to_render:
+        if frame_idx >= n_frames:
+            print(f"Skipping frame {frame_idx} (out of range, max: {n_frames-1})")
+            continue
+
+        d.qpos[:] = hand_qpos[:, frame_idx]
+        if m.nmocap > 0:
+            d.mocap_pos[0] = object_qpos[:3, frame_idx]
+            d.mocap_quat[0] = object_qpos[3:7, frame_idx]
+        mujoco.mj_forward(m, d)
+
+        renderer.update_scene(d, camera=cam, scene_option=scene_option)
+
+        geometry_count = renderer.scene.ngeom
+
+        # Object path (green spheres up to current frame)
+        for j in range(frame_idx + 1):
+            mujoco.mjv_initGeom(
+                renderer.scene.geoms[geometry_count + j],
+                type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                size=[0.005, 0, 0],
+                pos=object_qpos[:3, j],
+                mat=np.eye(3).flatten(),
+                rgba=np.array([0, 1, 0, 1]))
+        geometry_count += frame_idx + 1
+
+        # End effector position (larger green sphere)
+        ee_body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "panda_hand")
+        if ee_body_id >= 0:
+            mujoco.mjv_initGeom(
+                renderer.scene.geoms[geometry_count],
+                type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                size=[0.008, 0, 0],
+                pos=d.xpos[ee_body_id],
+                mat=np.eye(3).flatten(),
+                rgba=np.array([0, 1, 0, 0.8]))
+            geometry_count += 1
+
+        renderer.scene.ngeom = geometry_count
+
+        frame = renderer.render()
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+        output_path = os.path.join(output_dir, f"franka_frame_{frame_idx:04d}.png")
+        cv2.imwrite(output_path, frame_bgr)
+        print(f"Saved: {output_path}")
+
+    renderer.close()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Playback Franka trajectory from roboverse pickle file')
     parser.add_argument('pkl_path', type=str, help='Path to pickle file with trajectory data')
@@ -196,6 +272,16 @@ if __name__ == "__main__":
                        help='Playback speed multiplier (default: 1.0)')
     parser.add_argument('--no-kitchen', action='store_true',
                        help='Disable kitchen scene (show only robot)')
+    parser.add_argument('--render', action='store_true',
+                       help='Render frames to images instead of interactive playback')
+    parser.add_argument('--render-output', type=str, default='visuals/franka_frames',
+                       help='Output directory for rendered frames (default: visuals/franka_frames)')
+    parser.add_argument('--render-start', type=int, default=0,
+                       help='First frame to render (default: 0)')
+    parser.add_argument('--render-end', type=int, default=None,
+                       help='Last frame to render (default: all frames)')
+    parser.add_argument('--render-step', type=int, default=10,
+                       help='Frame step for rendering (default: 10)')
     args = parser.parse_args()
 
     # Load trajectory
@@ -236,6 +322,14 @@ if __name__ == "__main__":
     if use_kitchen:
         print("Using kitchen scene")
 
+    # Add offscreen framebuffer size for rendering
+    import re
+    mujoco_tag_match = re.search(r'<mujoco[^>]*>', xml_string)
+    if mujoco_tag_match:
+        insert_pos = mujoco_tag_match.end()
+        visual_settings = '\n  <visual>\n    <global offwidth="1920" offheight="1080"/>\n  </visual>'
+        xml_string = xml_string[:insert_pos] + visual_settings + xml_string[insert_pos:]
+
     # Load model
     m = mujoco.MjModel.from_xml_string(xml_string)
     d = mujoco.MjData(m)
@@ -256,6 +350,13 @@ if __name__ == "__main__":
     print("\nJoint names:")
     for i in range(m.njnt):
         print(f"  {i}: {mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, i)}")
+
+    if args.render:
+        render_end = args.render_end if args.render_end is not None else n_frames
+        frames_to_render = list(range(args.render_start, render_end, args.render_step))
+        print(f"\nRendering {len(frames_to_render)} frames to {args.render_output}/")
+        render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, args.render_output)
+        print(f"\nAll images saved to: {args.render_output}/")
 
     print("\nStarting playback... (close viewer to exit)")
 
@@ -322,6 +423,10 @@ if __name__ == "__main__":
             viewer.user_scn.ngeom = geometry_count
             viewer.sync()
             i += 1
+
+            if i % 30 == 0:
+                print(f"Camera: azimuth={viewer.cam.azimuth:.1f}, elevation={viewer.cam.elevation:.1f}, "
+                      f"distance={viewer.cam.distance:.3f}, lookat=[{viewer.cam.lookat[0]:.3f}, {viewer.cam.lookat[1]:.3f}, {viewer.cam.lookat[2]:.3f}]")
 
             # Timing
             elapsed = time.time() - step_start

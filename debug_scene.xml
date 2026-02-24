@@ -531,16 +531,7 @@
     <mesh name="distr_cab_model_normalized_collision_10._coll" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/objects/objaverse/bar_soap/bar_soap_3/collision/model_normalized_collision_10.obj" scale="0.1045 0.1045 0.1155"/>
     <mesh name="distr_cab_model_normalized_collision_12._coll" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/objects/objaverse/bar_soap/bar_soap_3/collision/model_normalized_collision_12.obj" scale="0.1045 0.1045 0.1155"/>
     <mesh name="distr_cab_model_normalized_collision_13._coll" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/objects/objaverse/bar_soap/bar_soap_3/collision/model_normalized_collision_13.obj" scale="0.1045 0.1045 0.1155"/>
-  
-          <mesh name="mesh_0" file="barrier_transformed_0.obj"/>
-      
-
-          <mesh name="visual_mesh_0" file="model_normalized_0.obj" scale="0.23 0.2 0.2"/>
-      
-
-          <mesh name="visual_mesh_1" file="model_normalized_0.obj" scale="0.23 0.2 0.2"/>
-      
-</asset>
+  </asset>
 
   <worldbody>
 		<include file="agents/MANO_right/body.xml" />
@@ -2831,22 +2822,7 @@
       <geom name="distr_cab_g32" type="mesh" friction="0.95 0.3 0.1" solref="0.001 2" solimp="0.998 0.998" density="100" rgba="0.8 0.8 0.8 0" mesh="distr_cab_model_normalized_collision_13._coll"/>
       <site name="distr_cab_default_site" pos="0 0 0" size="0.0019" rgba="1 0 0 0"/>
     </body>
-  
-          <body name="mesh_body" pos="0 0 0">
-              <geom type="mesh" mesh="mesh_0" rgba="0.2 0.8 0.2 1" group="2"/>
-          </body>
-      
-
-          <body name="visual_body_0" pos="3.12 -0.18 1.54" quat="0.6427876096865394 0.0 0.766044443118978 0.0">
-              <geom type="mesh" mesh="visual_mesh_0" rgba="0.9 0.9 0.95 1" contype="0" conaffinity="0" group="1"/>
-          </body>
-      
-
-          <body name="visual_body_1" pos="3.1 -0.18 1.54" quat="0.6427876096865394 0.0 0.766044443118978 0.0">
-              <geom type="mesh" mesh="visual_mesh_1" rgba="0.9 0.9 0.95 1" contype="0" conaffinity="0" group="1"/>
-          </body>
-      
-</worldbody>
+  </worldbody>
 
   <!-- <actuator> -->
     <!-- <general name="robot0_torq_j1" joint="robot0_joint1" ctrllimited="true" ctrlrange="-80 80"/>

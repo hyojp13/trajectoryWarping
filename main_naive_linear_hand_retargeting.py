@@ -7,6 +7,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import torch
 import xml.etree.cElementTree as ET
+import cv2
 
 from parse_splines import *
 from trajectory import *
@@ -23,21 +24,19 @@ from contacts import *
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
-  
+
   ET.SubElement(root, "include", file="tasks/{0}.xml".format(taskName))
-  
+
   ET.SubElement(root, "include", file="agents/{0}/assets.xml".format(agentName))
   ET.SubElement(root, "include", file="agents/{0}/actuators.xml".format(agentName))
-  
+
   worldBody = ET.SubElement(root, "worldbody")
   ET.SubElement(worldBody, "include", file="agents/{0}/body.xml".format(agentName))
-  
-  #ET.SubElement(worldBody, "include", file="agents/{0}/mocap_bodies.xml".format(agentName))
 
   tree = ET.ElementTree(root)
-  
+
   ET.indent(tree, space="\t", level=0)
-  
+
   tree.write("env.xml")
 
 
@@ -83,23 +82,21 @@ def convert_to_quaternions_object(qpos_spline_data):
 def rotate_keyframe_angles(keyframes, rotation):
   """
   Add rotation to existing orientations in keyframes
-  keyframes: (6, n_frames) array 
+  keyframes: (6, n_frames) array
   rotation: [rx, ry, rz] to add to existing rotations
   """
   keyframes_modified = keyframes.copy()
-  
+
   additional_rot = R.from_euler('xyz', np.radians(rotation))
-  
+
   for i in range(keyframes.shape[1]):
-      # Get existing rotation
       existing_euler = keyframes[3:6, i]
       existing_rot = R.from_euler('xyz', existing_euler)
-      
+
       combined_rot = additional_rot * existing_rot
-      
-      # Convert back to euler and store
+
       keyframes_modified[3:6, i] = combined_rot.as_euler('xyz')
-  
+
   return keyframes_modified
 
 
@@ -119,10 +116,9 @@ def load_config(config_path):
     if field not in config:
       raise ValueError(f"Configuration file must contain '{field}' field")
 
-  # Optional barrier optimization parameters with defaults
-  config.setdefault('barrier_weight', 0.6)  # Relative weight vs contact loss
-  config.setdefault('barrier_margin', 0.01)  # cm safety margin
-  config.setdefault('barrier_n', 2.0)  # Quadratic penalty
+  config.setdefault('barrier_weight', 0.6)
+  config.setdefault('barrier_margin', 0.01)
+  config.setdefault('barrier_n', 2.0)
 
   return config
 
@@ -130,7 +126,6 @@ def load_config(config_path):
 if __name__ == "__main__":
   parser = argparse.ArgumentParser(description='Run trajectory retargeting with configuration file')
   parser.add_argument('config', type=str, help='Path to configuration JSON file')
-  parser.add_argument('--initial', action='store_true', help='Load initial data from initial_trajectories instead of startingTrajectories')
   args = parser.parse_args()
 
   # Load configuration
@@ -215,6 +210,19 @@ if __name__ == "__main__":
   # add mesh barriers and visuals to MuJoCo
   xml_string = add_mesh_barriers_to_xml(scene_file, barriers, visuals)
 
+  # Add offscreen framebuffer size for recording
+  xml_string = xml_string.replace(
+    '<mujoco',
+    '<mujoco',
+    1
+  )
+  import re
+  mujoco_tag_match = re.search(r'<mujoco[^>]*>', xml_string)
+  if mujoco_tag_match:
+    insert_pos = mujoco_tag_match.end()
+    visual_settings = '\n  <visual>\n    <global offwidth="1920" offheight="1080"/>\n  </visual>'
+    xml_string = xml_string[:insert_pos] + visual_settings + xml_string[insert_pos:]
+
   object = trimesh.load(object_mesh_file, process=False)
 
   # Load contacts from .lcexp file
@@ -236,43 +244,28 @@ if __name__ == "__main__":
 
   sim_time = np.linspace(0, 1, frames)
 
-  # Load trajectory data
-  if args.initial:
-    # Load from initial_trajectories folder (already in quaternion format)
-    initial_hand_path = f"initial_trajectories/{TASK}_hand.npy"
-    initial_object_path = f"initial_trajectories/{TASK}_object.npy"
+  # read splines to numpy
+  qpos_spline_data = np.array([spline(sim_time) for spline in splines]) # (51, frames, 2)
+  object_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplines]) # (6, frames, 2)
 
-    print(f"Loading initial trajectories from: {initial_hand_path}, {initial_object_path}")
+  qpos_frames = qpos_spline_data[0, :, 0] # frames are same for all dof
+  qpos_spline_data = qpos_spline_data[:, :, 1] # (51, frames)
 
-    qpos = np.load(initial_hand_path)  # (67, frames)
-    object_qpos_loaded = np.load(initial_object_path)  # (frames, 7)
-    object_qpos = object_qpos_loaded.T  # (7, frames)
+  object_qpos_spline_data = object_qpos_spline_data[:, :, 1] # (6, frames)
 
-    qpos_copy = qpos.copy()
-  else:
-    # Read splines to numpy
-    qpos_spline_data = np.array([spline(sim_time) for spline in splines]) # (51, frames, 2)
-    object_qpos_spline_data = np.array([spline(sim_time) for spline in objectSplines]) # (6, frames, 2)
+  qpos_spline_data = rotate_keyframe_angles(qpos_spline_data, rotation)
+  object_qpos_spline_data = rotate_keyframe_angles(object_qpos_spline_data, rotation)
 
-    qpos_frames = qpos_spline_data[0, :, 0] # frames are same for all dof
-    qpos_spline_data = qpos_spline_data[:, :, 1] # (51, frames)
+  if AGENT == 'MANO_right' or AGENT == 'trajectories':
+    qpos = convert_to_quaternions_MANO(qpos_spline_data)
+  if AGENT == 'Allegro_right':
+    qpos = convert_to_quaternions_Allegro(qpos_spline_data)
+  qpos_copy = qpos.copy()
 
-    object_qpos_spline_data = object_qpos_spline_data[:, :, 1] # (6, frames)
+  object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
+  object_qpos_copy = object_qpos.copy()
 
-    qpos_spline_data = rotate_keyframe_angles(qpos_spline_data, rotation)
-    object_qpos_spline_data = rotate_keyframe_angles(object_qpos_spline_data, rotation)
 
-    if AGENT == 'MANO_right' or AGENT == 'trajectories':
-      qpos = convert_to_quaternions_MANO(qpos_spline_data)
-    if AGENT == 'Allegro_right':
-      qpos = convert_to_quaternions_Allegro(qpos_spline_data)
-    qpos_copy = qpos.copy()
-
-    object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
-  # object_qpos_copy = object_qpos.copy()
-
-  # Start timing the retargeting process
-  retargeting_start_time = time.time()
 
   start_pos = object_qpos[:3, 0].copy()
   end_pos = object_qpos[:3, frames-1].copy()
@@ -281,24 +274,11 @@ if __name__ == "__main__":
   endFinalPos = end_pos + end_final_pos_shift  # Actual end destination
   endObjPos = endFinalPos + end_obj_pos_shift  # Motion should end here, points from here to endFinalPos is linear interpolation
 
-  # generate desired end object
-  # basket_mesh = create_basket(radius=0.1, height=0.16, wall_thickness=0.01)
-  # basket_mesh.export('scene/basket.obj')
-  # shift_obj('scene/basket.obj', endObjPos)
-
-  # determine entrance to object
-  # endWayPt = getEntrance('scene/basket.obj')
-
-  # endObj = 'scene/basket.obj'
-  # waypts = [start_pos + [-0.2, 0, 0.5],
-            # start_pos + [0, -0.5, 0.2]]
-
   # Process waypoints: convert relative positions to absolute positions
   waypts_processed = []
   for waypt in waypts:
     waypt_pos = newStartPos + waypt[0]  # Add waypoint offset to newStartPos
     if len(waypt) == 4:
-      # Include rotation if provided
       waypts_processed.append((waypt_pos, waypt[1], waypt[2], waypt[3]))
     else:
       waypts_processed.append((waypt_pos, waypt[1], waypt[2]))
@@ -309,8 +289,6 @@ if __name__ == "__main__":
   pos_waypt_constrained, _, _, waypts_idx = trajectoryConstraintsPolyline(object_qpos[:3, :], startPos = newStartPos, endPos = endObjPos, floor_height = start_pos[2], waypts = waypts)
 
   # Apply rotations at waypoints if specified
-  # Rotations are applied gradually from the previous waypoint (or contact start) to current waypoint
-  # object_rotation_qpos: (4, frames)
   object_rotation_qpos = apply_waypoint_rotations(object_qpos[3:7, :], waypts, waypts_idx, startIdx, frames)
 
 
@@ -322,12 +300,8 @@ if __name__ == "__main__":
   print("Frames of contact:", contact_frame_count)
   print("Frames after contact:", end_frame_count)
 
-  # ensure that waypoints are not too close to a barrier
-  # if not barrierWayptsCheck(barriers, waypts, boundary_radius):
-  #   raise Exception("waypoints are closer to the barrier than the object radius")
-
   barrierConstraints(pos_waypt_constrained.T, boundary_radius, barriers)
-  
+
 
   # ensure all points are above the surface
   obj = read_obj("scene/curve_positions.obj")
@@ -337,18 +311,10 @@ if __name__ == "__main__":
 
   trajectory = read_obj("scene/curve_positions.obj")  # (frames, 3)
 
-  # ensure trajectory ends in end position
-  if not np.isclose(trajectory[-1, :], endFinalPos, atol=1e-3).all():
-    print("trajectory does not end in end position, adding extra points")
-    print(trajectory[-1, :], endFinalPos)
-    moveToEndPt("scene/curve_positions.obj", endFinalPos, extra_pt_count)
-    trajectory = read_obj("scene/curve_positions.obj")
-  else:
-    extra_pt_count = 0
-  
+  extra_pt_count = 0
 
-  # new object polyline after barrier and waypoints constraints (entire polyline considered "contact" trajectory)
-  # new_object_qpos: # (7, n+extra)
+
+  # new object polyline after barrier and waypoints constraints
   new_object_qpos = np.zeros((object_qpos.shape[0], object_qpos.shape[1] + extra_pt_count))
   new_object_qpos[:3, :] = trajectory.T
   new_object_qpos[3:, :object_qpos.shape[1]] = object_rotation_qpos
@@ -366,7 +332,6 @@ if __name__ == "__main__":
   # all points in timewarp are DURING contact only, ie. 0 -> first contact
 
   # Quaternion spline
-  # Convert from MuJoCo format [w,x,y,z] to scipy format [x,y,z,w] for processing
   quat_mujoco = new_object_qpos[3:7, :].T  # (n, 4) in [w,x,y,z] format
   quat_scipy = np.column_stack([quat_mujoco[:, 1:4], quat_mujoco[:, 0]])  # Convert to [x,y,z,w]
   quat_spline, _ = create_quaternion_bspline(quat_scipy, waypts_info=(waypts_idx, final_waypt_timesteps))
@@ -398,118 +363,158 @@ if __name__ == "__main__":
 
 
   ##### hand retargeting #####
-  # retarget hand during contact
-  # compute hand component meshes
+  # Compute hand component meshes (needed for metrics calculation and visualization)
   hand_components = [None] * hand_components_len
   for j in range(hand_components_len):
     hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
 
-  # contact_timewarp: (frames + extra_pt_count,)
-  # [0, 1] -> [0, 1] where the indices are progressing linearly from 0 to 1, and each index contains an output in [0,1]
-  # all points in timewarp are during "contact" only, but this actually includes the non contact ranges as all frames are taken as contact
+  # Input-frame-iterated interpolation approach:
+  # 1. Iterate over INPUT contact frames
+  # 2. For each input frame, get its output time from the timewarp
+  # 3. Evaluate the retargeted object spline at that output time
+  # 4. Compute the exact rigid body hand transform (wrist + fingers)
+  # 5. Store as keyframes at non-uniform output times
+  # 6. Interpolate all hand DOFs between keyframes to get the uniform output trajectory
+  #
+  # This exposes the SE(3) interpolation non-equivariance: keyframes are exact,
+  # but interpolated frames between them don't preserve contact geometry.
 
-  # for each frame in the contact range, we find the closest original frame using the timewarp.
-  # the closest original frame is in [0, frames+extra_pt_count] (length of contact_timewarp)
-  # this is clipped to [0, frames] to match the contact data that we have
-  # the closest original frame more precisely in [start_frame_count, frames+extra_pt_count]
-  # since we are marking all frames as contact, which actually only begin at start_frame_count
-  print(f"Using device for optimization: {optimization_device}")
+  contact_timewarp_subset = contact_timewarp[startIdx:endIdx+1]
+  n_input_frames = len(contact_timewarp_subset)
 
-  kinematic_tree = extract_kinematic_tree(m, hand_component_offset, hand_components_len)
-  kinematic_tree_torch = precompute_kinematic_tree_tensors(
-    kinematic_tree, hand_component_offset, hand_components_len, optimization_device
-  )
+  # For each input frame, compute the output time and the rigid body hand transform
+  keyframe_times = np.zeros(n_input_frames)  # output times (non-uniform)
+  keyframe_hand_pos = np.zeros((n_input_frames, 3))
+  keyframe_hand_quat_scipy = np.zeros((n_input_frames, 4))  # scipy [x,y,z,w]
+  keyframe_fingers = np.zeros((n_input_frames, qpos_copy.shape[0] - 7))  # all finger DOFs
 
-  for frame in range(contact_frame_count):
-  # for frame in range(60):
-    closet_original_frame = get_closest_original_frame(contact_timewarp, (frame+1)/contact_frame_count)
+  for i in range(n_input_frames):
+    orig_frame = startIdx + i
 
-    if frame % 1 == 0:
-      print(frame, "/", contact_frame_count, ":", closet_original_frame, start_frame_count, frames+extra_pt_count)
-    if closet_original_frame > endIdx:  # maps to final entering frames
-      closet_original_frame = endIdx
+    # Get the output time for this input frame from the timewarp
+    output_time = contact_timewarp_subset[i]
+    keyframe_times[i] = output_time
 
-    # Pre-compute local hand contacts for this frame (cached across optimization iterations)
-    local_contacts_cache = precompute_local_hand_contacts(
-      hand_contacts, hand_components, hand_components_len,
-      closet_original_frame, optimization_device
-    )
+    # Get original object pose at this input frame
+    original_obj_pos = object_qpos_copy[:3, orig_frame]
+    original_obj_quat_mj = object_qpos_copy[3:7, orig_frame]  # MuJoCo [w,x,y,z]
+    original_obj_rot = R.from_quat([original_obj_quat_mj[1], original_obj_quat_mj[2], original_obj_quat_mj[3], original_obj_quat_mj[0]])
 
-    # initial hand frame starts with actuation at closest_original_frame
-    if frame == 0:
-      wrist_init_pos = retargeted_spline_pos[start_frame_count, :3].T
-      wrist_init_quat = qpos_copy[3:7, closet_original_frame]
-    else:
-      # Move wrist position with the object displacement (not just previous frame)
-      prev_obj_pos = retargeted_spline_pos[start_frame_count+frame-1, :3]
-      curr_obj_pos = retargeted_spline_pos[start_frame_count+frame, :3]
-      obj_displacement = curr_obj_pos - prev_obj_pos
-      wrist_init_pos = qpos[:3, start_frame_count + frame - 1] + obj_displacement
+    # Get original hand pose at this input frame
+    original_hand_pos = qpos_copy[:3, orig_frame]
+    original_hand_quat_mj = qpos_copy[3:7, orig_frame]  # MuJoCo [w,x,y,z]
+    original_hand_rot = R.from_quat([original_hand_quat_mj[1], original_hand_quat_mj[2], original_hand_quat_mj[3], original_hand_quat_mj[0]])
 
-      prev_obj_quat_mj = retargeted_spline_pos[start_frame_count+frame-1, 3:7]  # w,x,y,z
-      curr_obj_quat_mj = retargeted_spline_pos[start_frame_count+frame, 3:7]  # w,x,y,z
+    # Evaluate the retargeted object spline at this output time
+    retargeted_obj_pos_at_t = np.array(scipy.interpolate.splev(output_time, pos_spline)).flatten()
+    retargeted_obj_quat_scipy_at_t = np.array(scipy.interpolate.splev(output_time, quat_spline)).flatten()
+    retargeted_obj_quat_scipy_at_t = retargeted_obj_quat_scipy_at_t / np.linalg.norm(retargeted_obj_quat_scipy_at_t)
+    retargeted_obj_rot = R.from_quat(retargeted_obj_quat_scipy_at_t)  # already in scipy [x,y,z,w]
 
-      # Compute relative rotation from previous to current frame
-      # Convert MuJoCo [w,x,y,z] to scipy [x,y,z,w]
-      prev_obj_rot = R.from_quat([prev_obj_quat_mj[1], prev_obj_quat_mj[2], prev_obj_quat_mj[3], prev_obj_quat_mj[0]])
-      curr_obj_rot = R.from_quat([curr_obj_quat_mj[1], curr_obj_quat_mj[2], curr_obj_quat_mj[3], curr_obj_quat_mj[0]])
-      delta_rotation = curr_obj_rot * prev_obj_rot.inv()
+    # Compute hand pose in object's local frame (constant relative pose)
+    hand_pos_local = original_obj_rot.inv().apply(original_hand_pos - original_obj_pos)
+    hand_rot_local = original_obj_rot.inv() * original_hand_rot
 
-      # Apply same delta rotation to previous hand wrist rotation
-      prev_wrist_quat_mj = qpos[3:7, start_frame_count + frame - 1]  # w,x,y,z
-      prev_wrist_rot = R.from_quat([prev_wrist_quat_mj[1], prev_wrist_quat_mj[2], prev_wrist_quat_mj[3], prev_wrist_quat_mj[0]])
-      new_wrist_rot = delta_rotation * prev_wrist_rot
-      new_wrist_quat_scipy = new_wrist_rot.as_quat()  # scipy [x,y,z,w]
-      wrist_init_quat = np.array([new_wrist_quat_scipy[3], new_wrist_quat_scipy[0], new_wrist_quat_scipy[1], new_wrist_quat_scipy[2]])  # MuJoCo [w,x,y,z]
+    # Apply relative pose to retargeted object
+    new_hand_pos = retargeted_obj_pos_at_t + retargeted_obj_rot.apply(hand_pos_local)
+    new_hand_rot = retargeted_obj_rot * hand_rot_local
 
-    initial_qpos = np.concatenate((wrist_init_pos, wrist_init_quat, qpos_copy[7:, closet_original_frame]))
+    keyframe_hand_pos[i] = new_hand_pos
+    keyframe_hand_quat_scipy[i] = new_hand_rot.as_quat()  # scipy [x,y,z,w]
+
+    # Copy finger joints from this input frame
+    keyframe_fingers[i] = qpos_copy[7:, orig_frame]
+
+  # Now interpolate from non-uniform keyframe_times to uniform output times
+  # using cubic B-spline fitting via smoothspline (same as object trajectory)
+  # Ensure keyframe_times is strictly increasing (required by splprep)
+  kf_times = keyframe_times.copy()
+  for i in range(1, len(kf_times)):
+    if kf_times[i] <= kf_times[i-1]:
+      kf_times[i] = kf_times[i-1] + 1e-10
+
+  # Sample within the range of kf_times to avoid cubic B-spline extrapolation
+  output_times = np.linspace(kf_times[0], kf_times[-1], contact_frame_count)
+
+  # Helper: fit cubic B-spline with timewarp parameterization and sample at output_times
+  # splprep has a 10-dimension limit, so we batch data into groups of <=10
+  def fit_and_sample_bspline(data, times, sample_times, smoothing_factor=0.001):
+    """Fit cubic B-spline to data (n_points, n_dims) parameterized by times, sample at sample_times."""
+    n_dims = data.shape[1]
+    result = np.zeros((len(sample_times), n_dims))
+    batch_size = 10  # splprep max dimension
+    for start in range(0, n_dims, batch_size):
+      end = min(start + batch_size, n_dims)
+      batch = data[:, start:end]
+      batch = break_adjacent_duplicates(batch)
+      batch_list = [*batch.T]
+      spline, _ = scipy.interpolate.splprep(batch_list, u=times, s=smoothing_factor, k=3)
+      sampled = np.array(scipy.interpolate.splev(sample_times, spline)).T
+      result[:, start:end] = sampled
+    return result
+
+  # Fit hand position (3 dims) with timewarp parameterization, sample at uniform output times
+  interp_hand_pos = fit_and_sample_bspline(keyframe_hand_pos, kf_times, output_times)
+
+  # Fit finger joints (batched in groups of 10) with timewarp parameterization
+  interp_fingers = fit_and_sample_bspline(keyframe_fingers, kf_times, output_times)
+
+  # Fit hand quaternion with timewarp parameterization
+  # Ensure quaternion hemisphere consistency
+  aligned_quats = keyframe_hand_quat_scipy.copy()
+  for i in range(1, n_input_frames):
+    if np.dot(aligned_quats[i], aligned_quats[i-1]) < 0:
+      aligned_quats[i] = -aligned_quats[i]
+
+  # Break identical adjacent quaternions
+  eps = 1e-8
+  for i in range(1, len(aligned_quats)):
+    if np.allclose(aligned_quats[i], aligned_quats[i-1], atol=eps):
+      aligned_quats[i] += eps * np.array([1.0, 0.0, 0.0, 0.0])
+      aligned_quats[i] /= np.linalg.norm(aligned_quats[i])
+
+  interp_hand_quat_scipy = fit_and_sample_bspline(aligned_quats, kf_times, output_times)
+  # Normalize quaternions
+  interp_hand_quat_scipy = interp_hand_quat_scipy / np.linalg.norm(interp_hand_quat_scipy, axis=1, keepdims=True)
+
+  # Convert to MuJoCo [w,x,y,z]
+  interp_hand_quat_mujoco = np.column_stack([interp_hand_quat_scipy[:, 3], interp_hand_quat_scipy[:, 0:3]])
+
+  # Update qpos for contact frames
+  qpos[:3, start_frame_count:start_frame_count+contact_frame_count] = interp_hand_pos.T
+  qpos[3:7, start_frame_count:start_frame_count+contact_frame_count] = interp_hand_quat_mujoco.T
+  qpos[7:, start_frame_count:start_frame_count+contact_frame_count] = interp_fingers.T
 
 
-    prev_frame_qpos = qpos[:, start_frame_count+frame-1] if frame > 0 else None
-
-    qpos[:, start_frame_count+frame] = optimize_frame(
-      initial_qpos,
-      retargeted_spline_pos[start_frame_count+frame, :],
-      m, d, hand_contacts, object_contacts,
-      hand_components, hand_component_offset, object, closet_original_frame,
-      kinematic_tree, lr=learning_rate, n_iter=n_iter + (first_frame_iter-n_iter)*(frame==0), optimize_wrist=True,
-      optimize_joints=True, agent_type=AGENT,
-      print_logs=True, device=optimization_device,
-      kinematic_tree_torch=kinematic_tree_torch,
-      local_contacts_cache=local_contacts_cache,
-      loss_threshold=0.01
-      # prev_qpos=prev_frame_qpos, temporal_weight=0.1,
-      # barriers=barriers, barrier_weight=barrier_weight,
-      # barrier_margin=barrier_margin, barrier_n=barrier_n
-    )
-  
   # shift hand translation for before and after contact
-  hand_shift_start = qpos[:3, startIdx] - qpos_copy[:3, startIdx]
-  hand_shift_end = qpos[:3, endIdx] - qpos_copy[:3, endIdx]
-  qpos[:3, :startIdx] += hand_shift_start[:, np.newaxis]
-  qpos[:3, endIdx+1:] += hand_shift_end[:, np.newaxis]
+  hand_shift_start = qpos[:3, start_frame_count] - qpos_copy[:3, startIdx]
+  hand_shift_end = qpos[:3, start_frame_count + contact_frame_count - 1] - qpos_copy[:3, endIdx]
+  qpos[:3, :start_frame_count] += hand_shift_start[:, np.newaxis]
+  qpos[:3, start_frame_count+contact_frame_count:] += hand_shift_end[:, np.newaxis]
 
   # Compute rotation difference at contact boundaries
-  # Convert MuJoCo [w,x,y,z] to scipy [x,y,z,w]
-  wrist_rot_end_orig_mj = qpos_copy[3:7, endIdx]
-  wrist_rot_end_orig = R.from_quat([wrist_rot_end_orig_mj[1], wrist_rot_end_orig_mj[2], wrist_rot_end_orig_mj[3], wrist_rot_end_orig_mj[0]])
-  wrist_rot_end_new_mj = qpos[3:7, endIdx]
-  wrist_rot_end_new = R.from_quat([wrist_rot_end_new_mj[1], wrist_rot_end_new_mj[2], wrist_rot_end_new_mj[3], wrist_rot_end_new_mj[0]])
+  wrist_rot_end_orig_quat = qpos_copy[3:7, endIdx]
+  wrist_rot_end_orig = R.from_quat([wrist_rot_end_orig_quat[1], wrist_rot_end_orig_quat[2], wrist_rot_end_orig_quat[3], wrist_rot_end_orig_quat[0]])
+
+  wrist_rot_end_new_quat = qpos[3:7, start_frame_count + contact_frame_count - 1]
+  wrist_rot_end_new = R.from_quat([wrist_rot_end_new_quat[1], wrist_rot_end_new_quat[2], wrist_rot_end_new_quat[3], wrist_rot_end_new_quat[0]])
+
   delta_rot_end = wrist_rot_end_new * wrist_rot_end_orig.inv()
 
   # Apply rotation difference to frames after contact
-  for i in range(endIdx+1, frames):
-    orig_quat_mj = qpos_copy[3:7, i]
-    orig_rot = R.from_quat([orig_quat_mj[1], orig_quat_mj[2], orig_quat_mj[3], orig_quat_mj[0]])
+  for i in range(start_frame_count+contact_frame_count, frames):
+    orig_quat_mujoco = qpos_copy[3:7, endIdx + 1 + (i - start_frame_count - contact_frame_count)]
+    orig_rot = R.from_quat([orig_quat_mujoco[1], orig_quat_mujoco[2], orig_quat_mujoco[3], orig_quat_mujoco[0]])
     new_rot = delta_rot_end * orig_rot
-    new_quat_scipy = new_rot.as_quat()  # [x,y,z,w]
-    qpos[3:7, i] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])  # [w,x,y,z]
+    new_quat_scipy = new_rot.as_quat()
+    qpos[3:7, i] = np.array([new_quat_scipy[3], new_quat_scipy[0], new_quat_scipy[1], new_quat_scipy[2]])
 
-
-  # retarget hand before and after contact
+  # # retarget hand before and after contact
   qpos_start = qpos[:3, :start_frame_count]
   qpos_end = qpos[:3, -end_frame_count:]
-
+  # qpos[:3, -end_frame_count-20:] = np.ones((3, end_frame_count+20))
+  # qpos[:3, :start_frame_count+20] = np.ones((3, start_frame_count+20))
+  
   # retarget hand before contact
   barrierConstraints(qpos_start.T, hand_boundary_radius, barriers = barriers, traj_path = "scene/hand_start_positions.obj")
   
@@ -537,13 +542,6 @@ if __name__ == "__main__":
   retargeted_sim_time = np.linspace(0, 1, end_frame_count)
   qpos[:3, -end_frame_count:] = np.array(scipy.interpolate.splev(retargeted_sim_time, retargeted_end_spline))
 
-  # Smooth hand trajectory
-  qpos = smooth_hand_trajectory(qpos, frames, AGENT, window_length=21, polyorder=3, visualize=False)
-
-  # End timing the retargeting process
-  retargeting_end_time = time.time()
-  retargeting_elapsed_time = retargeting_end_time - retargeting_start_time
-
   # Compute contact distance metrics after full pipeline
   print("\nComputing contact distance metrics...")
   from optimize_contacts import compute_contact_metrics
@@ -557,15 +555,15 @@ if __name__ == "__main__":
 
   # Save final trajectories
   import os
-  trajectory_dir = "final_trajectories_0.01"
+  trajectory_dir = "final_trajectories_delete"
   os.makedirs(trajectory_dir, exist_ok=True)
 
   # Extract trajectory name from config file
   config_name = os.path.splitext(os.path.basename(args.config))[0]
 
-  hand_traj_path = os.path.join(trajectory_dir, f"{config_name}_hand.npy")
-  object_traj_path = os.path.join(trajectory_dir, f"{config_name}_object.npy")
-  metrics_path = os.path.join(trajectory_dir, f"{config_name}_metrics.npy")
+  hand_traj_path = os.path.join(trajectory_dir, f"{config_name}_hand_naive.npy")
+  object_traj_path = os.path.join(trajectory_dir, f"{config_name}_object_naive.npy")
+  metrics_path = os.path.join(trajectory_dir, f"{config_name}_metrics_naive.npy")
 
   np.save(hand_traj_path, qpos)
   np.save(object_traj_path, retargeted_spline_pos)
@@ -575,37 +573,9 @@ if __name__ == "__main__":
   print(f"  Hand: {hand_traj_path}")
   print(f"  Object: {object_traj_path}")
   print(f"  Metrics: {metrics_path}")
-  print(f"\nRetargeting time: {retargeting_elapsed_time:.2f} seconds")
-
-  # Save timing and hyperparameters to text file
-  timing_path = os.path.join(trajectory_dir, f"{config_name}_data.txt")
-  with open(timing_path, 'w') as f:
-    f.write(f"Retargeting Timing and Hyperparameters\n")
-    f.write(f"{'='*40}\n\n")
-    f.write(f"Config: {args.config}\n")
-    f.write(f"Agent: {AGENT}\n")
-    f.write(f"Task: {TASK}\n\n")
-    f.write(f"Timing\n")
-    f.write(f"{'-'*40}\n")
-    f.write(f"Retargeting time: {retargeting_elapsed_time:.2f} seconds\n\n")
-    f.write(f"Hyperparameters\n")
-    f.write(f"{'-'*40}\n")
-    f.write(f"learning_rate: {learning_rate}\n")
-    f.write(f"n_iter: {n_iter}\n")
-    f.write(f"first_frame_iter: {first_frame_iter}\n")
-    f.write(f"boundary_radius: {boundary_radius}\n")
-    f.write(f"hand_boundary_radius: {hand_boundary_radius}\n")
-    f.write(f"barrier_weight: {barrier_weight}\n")
-    f.write(f"barrier_margin: {barrier_margin}\n")
-    f.write(f"barrier_n: {barrier_n}\n")
-    f.write(f"extra_pt_count: {extra_pt_count}\n")
-    f.write(f"optimization_device: {optimization_device}\n")
-    f.write(f"frames: {frames}\n")
-    f.write(f"rotation: {rotation}\n")
 
   frame_pts = []
   obj_retarget_frame_pts = []
-
 
   with mujoco.viewer.launch_passive(m, d) as viewer:
     i = 0
@@ -623,7 +593,6 @@ if __name__ == "__main__":
       mujoco.mj_forward(m, d)
 
       # process local hand contacts
-      # local_hand_contacts: dict of hand component id -> list of local contact positions at frame i
       local_hand_contacts = {}
       for hand_component_id in range(hand_components_len):
         contacts_this_frame = hand_contacts[hand_component_id][i]
@@ -647,26 +616,6 @@ if __name__ == "__main__":
 
       geometry_count = 0
 
-      # object path color
-      if len(obj_retarget_frame_pts) <= start_frame_count:
-        rgba = np.array([0, 0, 1, 1])
-      elif len(obj_retarget_frame_pts) <= start_frame_count+contact_frame_count:
-        rgba = np.array([0, 1, 0, 1])
-      else:
-        rgba = np.array([1, 0, 0, 1])
-
-      # object path
-      for j in range(len(obj_retarget_frame_pts)):
-        mujoco.mjv_initGeom(
-            viewer.user_scn.geoms[j + geometry_count],
-            type=mujoco.mjtGeom.mjGEOM_SPHERE,
-            size=[0.005, 0, 0],
-            pos=np.array(obj_retarget_frame_pts[j]),
-            mat=np.eye(3).flatten(),
-            rgba=rgba
-        )
-      geometry_count += len(obj_retarget_frame_pts)
-
       # barrier
       if barriers is not None:
         for j in range(len(barriers)):
@@ -689,27 +638,7 @@ if __name__ == "__main__":
               mat=np.eye(3).flatten(),
               rgba=[0.5, 0.5, 0.5, 1])
         geometry_count += len(barriers)
-      
-      # bounding sphere
-      mujoco.mjv_initGeom(
-          viewer.user_scn.geoms[geometry_count],
-          type=mujoco.mjtGeom.mjGEOM_SPHERE,
-          size=[boundary_radius, 0, 0],
-          pos=np.array(obj_retarget_frame_pts[i]),
-          mat=np.eye(3).flatten(),
-          rgba=np.array([0.0, 0.0, 0.5, 0.3]))
-      geometry_count += 1
 
-      # hand bounding sphere
-      mujoco.mjv_initGeom(
-          viewer.user_scn.geoms[geometry_count],
-          type=mujoco.mjtGeom.mjGEOM_SPHERE,
-          size=[hand_boundary_radius, 0, 0],
-          pos=np.array(frame_pts[i]),
-          mat=np.eye(3).flatten(),
-          rgba=np.array([0.0, 0.0, 0.5, 0.3]))
-      geometry_count += 1
-      
       if waypts is not None:
       # waypoints
         for j in range(len(waypts)):
@@ -738,27 +667,15 @@ if __name__ == "__main__":
           )
         geometry_count += len(object_contacts[i])
 
-      # hand contacts
-      for j in local_hand_contacts: # iterate over hand components
-        for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
-          local_vertex = local_hand_contacts[j][k]
-          global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
-
-          mujoco.mjv_initGeom(
-              viewer.user_scn.geoms[k + geometry_count],
-              type=mujoco.mjtGeom.mjGEOM_SPHERE,
-              size=[0.003, 0, 0],
-              pos=np.array(global_vertex),
-              mat=np.eye(3).flatten(),
-              rgba=np.array([0, 0, 1, 1])
-          )
-        geometry_count += len(local_hand_contacts[j])
-      
       viewer.user_scn.ngeom = geometry_count
 
 
       viewer.sync()
       i += 1
+
+      if i % 30 == 0:
+        print(f"Camera: azimuth={viewer.cam.azimuth:.1f}, elevation={viewer.cam.elevation:.1f}, "
+              f"distance={viewer.cam.distance:.3f}, lookat=[{viewer.cam.lookat[0]:.3f}, {viewer.cam.lookat[1]:.3f}, {viewer.cam.lookat[2]:.3f}]")
 
       time_until_next_step = m.opt.timestep - (time.time() - step_start)
       if time_until_next_step > 0:
