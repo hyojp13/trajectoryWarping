@@ -4,6 +4,8 @@ import numpy as np
 def get_mesh_for_body(model, body_id):
     # find all geoms that belong to this body
     geoms = []
+    print("ngeom:", model.ngeom)
+    print(model.geom_bodyid)
     for geom_id in range(model.ngeom):
         if model.geom_bodyid[geom_id] == body_id:
             mesh_id = model.geom_dataid[geom_id]  # mesh used by this geom

@@ -21,8 +21,8 @@ from differentiable_fk import *
 from optimize_contacts import *
 from load_contacts import load_contacts_lcexp
 
-AGENT="trajectories"
-TASK="fryingpan_cook"
+AGENT="Allegro_right"
+TASK="apple_pass"
 
 def build_env_xml(agentName, taskName):
   root = ET.Element("mujoco", model="{0} {1}".format(agentName, taskName))
@@ -112,6 +112,7 @@ if __name__ == "__main__":
 
 
   frames = 1000
+  frames = 710
   
   m = mujoco.MjModel.from_xml_path('kitchen2.xml')
   d = mujoco.MjData(m)
@@ -122,10 +123,11 @@ if __name__ == "__main__":
   #   num_vertices = sum(1 for line in f if line.startswith('v '))
   # print("Number of vertices:", num_vertices)
 
-  object = trimesh.load('/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj', process=False)
+  object = trimesh.load('/Users/hjp/desktop/trajectoryRetargeting/tasks/apple.obj', process=False)
   
   # Load contacts from .lcexp file
-  contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp')
+  hand = 'Allegro'
+  contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp', hand)
 
   if len(contacts_lcexp) != frames:
     raise Exception("Number of contacts in .lcexp file does not match number of frames")
@@ -142,6 +144,7 @@ if __name__ == "__main__":
   object_qpos_spline_data = object_qpos_spline_data[:, :, 1] # (6, frames)
 
   rotation = [0, 0, 146.441]
+  rotation = [0, 0, 0]
   qpos_spline_data = rotate_keyframe_angles(qpos_spline_data, rotation)
   object_qpos_spline_data = rotate_keyframe_angles(object_qpos_spline_data, rotation)
 
@@ -157,13 +160,30 @@ if __name__ == "__main__":
 
   #### LOAD HAND AND OBJECT CONTACTS FROM .lcexp FILE ####
   hand_contacts = {}  # per hand component, each contains a list of contacts per frame
-  hand_components_len = 16
+  hand_components_len = 21
   hand_component_offset = 2  # starting index of body_id for hand components in mujoco model
+
+  if AGENT == 'Allegro_right':
+    # Look up body IDs by name since the kitchen model has many bodies before the hand.
+    allegro_body_names = [
+        'allegro_palm',
+        'allegro_th_base', 'allegro_th_proximal', 'allegro_th_medial', 'allegro_th_distal', 'allegro_th_tip',
+        'allegro_ff_base', 'allegro_ff_proximal', 'allegro_ff_medial', 'allegro_ff_distal', 'allegro_ff_tip',
+        'allegro_mf_base', 'allegro_mf_proximal', 'allegro_mf_medial', 'allegro_mf_distal', 'allegro_mf_tip',
+        'allegro_rf_base', 'allegro_rf_proximal', 'allegro_rf_medial', 'allegro_rf_distal', 'allegro_rf_tip',
+    ]
+    hand_component_body_ids = []
+    for name in allegro_body_names:
+        body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
+        if body_id == -1:
+            raise ValueError(f"Body '{name}' not found in model")
+        hand_component_body_ids.append(body_id)
+
   for i in range(hand_components_len):
     hand_contacts[i] = [None] * frames
   
   object_contacts = [None] * frames
-  
+
   # Convert contacts from .lcexp format to playTrajectory format
   for frame_idx in range(frames):
     frame_contacts = contacts_lcexp[frame_idx]  # List of (obj_vertex, hand_link_idx, (face_idx, bary1, bary2, bary3))
@@ -190,6 +210,8 @@ if __name__ == "__main__":
       face_idx, bary1, bary2, bary3 = hand_contact_info
       
       hand_component_id = hand_link_idx
+
+      # print(hand_component_id, hand_components_len)
       
       if hand_component_id < 0 or hand_component_id >= hand_components_len:
         raise Exception("Hand component id is out of range at frame " + str(frame_idx))
@@ -239,7 +261,10 @@ if __name__ == "__main__":
     # compute hand component meshes
     hand_components = [None] * hand_components_len
     for j in range(hand_components_len):
-      hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
+      if AGENT == 'Allegro_right':
+        hand_components[j] = get_mesh_for_body(m, hand_component_body_ids[j])
+      else:
+        hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
     
     # qpos_optimized = qpos.copy()
     # qpos = optimize_trajectory(
@@ -334,7 +359,10 @@ if __name__ == "__main__":
       for j in local_hand_contacts: # iterate over hand components
         for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
           local_vertex = local_hand_contacts[j][k]
-          global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
+          if AGENT == 'Allegro_right':
+            global_vertex = local_to_global(local_vertex, hand_component_body_ids[j], d)
+          else:
+            global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
 
           mujoco.mjv_initGeom(
               viewer.user_scn.geoms[k + geometry_count],
