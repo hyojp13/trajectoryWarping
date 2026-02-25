@@ -67,7 +67,7 @@ def compute_global_object_contacts(object_qpos, object_mesh, object_contacts, fr
 
 
 def compute_contact_loss_torch(global_hand_contacts_dict, global_object_contacts,
-                               hand_contacts, frame_idx):
+                               hand_contacts, frame_idx, return_distances=False):
     """
     Compute loss between hand contacts and object contacts.
     Assumes 1-to-1 correspondence: each object contact has exactly one hand contact.
@@ -77,9 +77,13 @@ def compute_contact_loss_torch(global_hand_contacts_dict, global_object_contacts
         global_object_contacts: torch tensor (M, 3)
         hand_contacts: dict mapping hand_component_id -> list of contacts per frame
         frame_idx: frame index
+        return_distances: if True, also return per-pair distances as numpy array
 
     Returns:
-        scalar torch tensor loss
+        If return_distances is False:
+            scalar torch tensor loss
+        If return_distances is True:
+            tuple of (scalar torch tensor loss, numpy array of per-pair distances)
     """
     # Build a mapping from object_contact_idx to hand contact position
     # hand_contacts[component_id][frame] = [(face_id, bary_coords, object_contact_idx), ...]
@@ -99,18 +103,6 @@ def compute_contact_loss_torch(global_hand_contacts_dict, global_object_contacts
             # Since we have 1-to-1 correspondence, each object_contact_idx should only appear once
             contact_correspondences[object_contact_idx] = global_positions[i]
 
-    # DEBUG: Print contact info on first call
-    import __main__
-    if not hasattr(__main__, '_contact_corr_debug_printed'):
-        print(f"\n[DEBUG compute_contact_loss_torch - correspondences]")
-        print(f"  Hand component IDs with contacts: {list(global_hand_contacts_dict.keys())}")
-        for hand_component_id in global_hand_contacts_dict:
-            global_positions = global_hand_contacts_dict[hand_component_id]
-            print(f"  Component {hand_component_id}: {len(global_positions)} contact(s)")
-            print(f"    Positions: {global_positions}")
-        print(f"  Contact correspondences: {list(contact_correspondences.keys())}")
-        __main__._contact_corr_debug_printed = True
-
     # Compute loss: for each object contact, compute distance to its corresponding hand contact
     losses = []
     for obj_idx in range(len(global_object_contacts)):
@@ -128,19 +120,15 @@ def compute_contact_loss_torch(global_hand_contacts_dict, global_object_contacts
         losses.append(distance)
 
     if len(losses) == 0:
+        if return_distances:
+            return torch.tensor(0.0, requires_grad=True), np.array([])
         return torch.tensor(0.0, requires_grad=True)
 
     total_loss = torch.stack(losses).mean()
 
-    # DEBUG: Print loss details on first call
-    import __main__
-    if not hasattr(__main__, '_contact_loss_debug_printed'):
-        print(f"\n[DEBUG compute_contact_loss_torch]")
-        print(f"  Number of object contacts: {len(global_object_contacts)}")
-        print(f"  Number of contact correspondences: {len(contact_correspondences)}")
-        print(f"  Individual distances: {[f'{d.item():.6f}' for d in losses]}")
-        print(f"  Mean loss: {total_loss.item():.6f}")
-        __main__._contact_loss_debug_printed = True
+    if return_distances:
+        distances_np = np.array([d.detach().cpu().item() for d in losses])
+        return total_loss, distances_np
 
     return total_loss
 
@@ -150,7 +138,9 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
                   kinematic_tree, lr=0.01, n_iter=100, optimize_wrist=True, optimize_joints=True,
                   agent_type='MANO_right', print_logs=False, device=None,
                   kinematic_tree_torch=None, local_contacts_cache=None,
-                  barriers=None, barrier_weight=1.0, barrier_margin=0.01, barrier_n=2.0):
+                  barriers=None, barrier_weight=1.0, barrier_margin=0.01, barrier_n=2.0,
+                  return_distances=False, loss_threshold=0.003,
+                  prev_qpos=None, temporal_weight=0.0):
     """
     Optimize hand qpos for a single frame to minimize contact correspondence error.
     Uses differentiable forward kinematics (PyTorch autograd) with GPU acceleration.
@@ -181,9 +171,14 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
         barrier_weight: weight for barrier collision loss term (default: 1.0)
         barrier_margin: distance threshold for barrier penalty (default: 0.01)
         barrier_n: steepness parameter for barrier penalty function (default: 2.0)
+        return_distances: if True, also return per-pair contact distances after optimization
+        loss_threshold: threshold for early termination; stops optimization if loss drops below this value (default: 0.001)
 
     Returns:
-        optimized qpos (numpy array)
+        If return_distances is False:
+            optimized qpos (numpy array)
+        If return_distances is True:
+            tuple of (optimized qpos, per-pair distances as numpy array)
     """
     from differentiable_fk import (
         precompute_kinematic_tree_tensors,
@@ -270,6 +265,11 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
 
     # Create PyTorch parameter for full qpos on the specified device
     qpos_torch = torch.tensor(qpos_init.copy(), requires_grad=True, dtype=torch.float32, device=device)
+
+    # Pre-compute previous frame tensor for temporal regularization
+    prev_qpos_torch = None
+    if prev_qpos is not None and temporal_weight > 0:
+        prev_qpos_torch = torch.tensor(prev_qpos, dtype=torch.float32, device=device, requires_grad=False)
 
     # Compute object contacts (constant) - move to device once
     global_object_contacts_np = compute_global_object_contacts(
@@ -359,12 +359,18 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
                 hand_vertices, combined_barriers,
                 n=barrier_n, margin=barrier_margin, device=device
             )
+            # print(barrier_loss)
 
-        loss = contact_loss + barrier_weight * barrier_loss
+        # Temporal regularization: penalize deviation from previous frame
+        # temporal_loss = torch.tensor(0.0, device=device)
+        # if prev_qpos_torch is not None:
+        #     temporal_loss = torch.norm(qpos_torch[:3] - prev_qpos_torch[:3])
+
+        loss = contact_loss + barrier_weight * barrier_loss #+ temporal_weight * temporal_loss
         loss.backward()
 
-        if print_logs and iteration % 10 == 0:
-            print(f"  Iteration {iteration}, Loss: {loss.item():.6f}, Contact: {contact_loss.item():.6f}")
+        # if print_logs and iteration % 10 == 0:
+        #     print(f"  Iteration {iteration}, Loss: {loss.item():.6f}, Contact: {contact_loss.item():.6f}, Temporal: {temporal_loss.item():.6f}")
 
         # Zero gradients for non-optimized parameters
         with torch.no_grad():
@@ -431,10 +437,126 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
             else:
                 print(f"  Iteration {iteration}, Loss: {loss.item():.6f}")
 
-        # Early termination if loss is effectively zero
-        if loss.item() < 1e-3:
+        # Early termination if loss is below threshold
+        if loss.item() < loss_threshold:
             if print_logs:
                 print(f"  Early termination at iteration {iteration} (loss: {loss.item():.6e})")
             break
 
-    return qpos_torch.detach().cpu().numpy()
+    optimized_qpos = qpos_torch.detach().cpu().numpy()
+
+    if return_distances:
+        # Compute final per-pair distances after optimization
+        with torch.no_grad():
+            global_hand_contacts_torch = compute_global_hand_contacts_torch(
+                qpos_torch, kinematic_tree_torch, hand_contacts,
+                hand_components, hand_component_offset, hand_components_len,
+                root_body_id, frame_idx, local_contacts_cache=local_contacts_cache
+            )
+            _, final_distances = compute_contact_loss_torch(
+                global_hand_contacts_torch,
+                global_object_contacts_torch,
+                hand_contacts,
+                frame_idx,
+                return_distances=True
+            )
+        return optimized_qpos, final_distances
+
+    return optimized_qpos
+
+
+def compute_contact_metrics(qpos, retargeted_spline_pos, m, d, hand_contacts, object_contacts,
+                            hand_components, hand_component_offset, object_mesh,
+                            start_idx, end_idx):
+    """
+    Compute contact distance metrics for all frames during contact after the full pipeline.
+
+    Args:
+        qpos: (nq, frames) hand trajectory after retargeting and smoothing
+        retargeted_spline_pos: (frames, 7) object trajectory [pos(3), quat(4)]
+        m: MuJoCo model
+        d: MuJoCo data
+        hand_contacts: dict of hand contacts per frame
+        object_contacts: list of object contact vertex indices per frame
+        hand_components: list of (faces, verts) tuples
+        hand_component_offset: starting body_id for hand components
+        object_mesh: trimesh object mesh
+        start_idx: first contact frame index
+        end_idx: last contact frame index
+
+    Returns:
+        dict with contact metrics:
+            - 'per_pair_distances': list of numpy arrays, one per frame
+            - 'average_distances': numpy array of average distance per frame
+            - 'num_contacts': numpy array of number of contact pairs per frame
+            - 'frame_indices': numpy array of frame indices
+            - 'start_idx': first contact frame index
+            - 'end_idx': last contact frame index
+    """
+    import mujoco
+    from handContacts import get_local_pos, local_to_global
+
+    hand_components_len = len(hand_components)
+
+    contact_metrics = {
+        'per_pair_distances': [],
+        'average_distances': [],
+        'num_contacts': [],
+        'frame_indices': [],
+        'start_idx': start_idx,
+        'end_idx': end_idx,
+    }
+
+    for frame_idx in range(start_idx, end_idx + 1):
+        # Set the hand pose in MuJoCo
+        d.qpos = qpos[:, frame_idx]
+        mujoco.mj_forward(m, d)
+
+        # Compute global object contacts
+        object_qpos = retargeted_spline_pos[frame_idx, :]
+        global_object_contacts_np = compute_global_object_contacts(
+            object_qpos, object_mesh, object_contacts, frame_idx
+        )
+
+        if len(global_object_contacts_np) == 0:
+            contact_metrics['per_pair_distances'].append(np.array([]))
+            contact_metrics['average_distances'].append(0.0)
+            contact_metrics['num_contacts'].append(0)
+            contact_metrics['frame_indices'].append(frame_idx)
+            continue
+
+        # Get local hand contacts and compute global positions
+        frame_distances = []
+        for hand_component_id in range(hand_components_len):
+            contacts_this_frame = hand_contacts[hand_component_id][frame_idx]
+            if contacts_this_frame is None:
+                continue
+
+            for contact in contacts_this_frame:
+                face_id, bary_coords, object_contact_idx = contact
+                # Get local position on hand mesh
+                local_pos = get_local_pos(face_id, bary_coords,
+                                          hand_components[hand_component_id][0],
+                                          hand_components[hand_component_id][1])
+                # Convert to global position
+                global_hand_pos = local_to_global(local_pos, hand_component_id + hand_component_offset, d)
+
+                # Get corresponding object contact position
+                obj_pos = global_object_contacts_np[object_contact_idx]
+
+                # Compute distance
+                distance = np.linalg.norm(global_hand_pos - obj_pos)
+                frame_distances.append(distance)
+
+        frame_distances = np.array(frame_distances)
+        contact_metrics['per_pair_distances'].append(frame_distances)
+        contact_metrics['average_distances'].append(np.mean(frame_distances) if len(frame_distances) > 0 else 0.0)
+        contact_metrics['num_contacts'].append(len(frame_distances))
+        contact_metrics['frame_indices'].append(frame_idx)
+
+    # Convert lists to numpy arrays for consistent saving
+    contact_metrics['average_distances'] = np.array(contact_metrics['average_distances'])
+    contact_metrics['num_contacts'] = np.array(contact_metrics['num_contacts'])
+    contact_metrics['frame_indices'] = np.array(contact_metrics['frame_indices'])
+
+    return contact_metrics

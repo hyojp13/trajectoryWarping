@@ -12,10 +12,43 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 import xml.etree.cElementTree as ET
 import os
+import re
+import cv2
+import trimesh
 
 from handContacts import get_mesh_for_body
 from load_contacts import load_contacts_lcexp
 from parse_splines import parseSplines
+
+
+def ensure_quaternion_continuity(qpos, quat_indices=(3, 7)):
+    """
+    Ensure quaternion sign continuity across frames to prevent spinning.
+
+    Quaternions q and -q represent the same rotation, but interpolating between
+    them causes the hand to spin. This function ensures consecutive quaternions
+    are in the same hemisphere by checking the dot product.
+
+    Args:
+        qpos: (n_dof, n_frames) array containing position data with quaternions
+        quat_indices: tuple (start, end) of quaternion indices in qpos (default: wrist at 3:7)
+
+    Returns:
+        qpos with quaternion signs corrected for continuity
+    """
+    qpos_fixed = qpos.copy()
+    start, end = quat_indices
+
+    for i in range(1, qpos.shape[1]):
+        prev_quat = qpos_fixed[start:end, i-1]
+        curr_quat = qpos_fixed[start:end, i]
+
+        # If dot product is negative, quaternions are in opposite hemispheres
+        # Flip current quaternion to same hemisphere as previous
+        if np.dot(prev_quat, curr_quat) < 0:
+            qpos_fixed[start:end, i] = -curr_quat
+
+    return qpos_fixed
 
 
 def build_env_xml(agentName, taskName):
@@ -51,6 +84,8 @@ if __name__ == "__main__":
                        help='Name of trajectory (e.g., "fryingpan_into_dishwasher")')
     parser.add_argument('--speed', type=float, default=1.0,
                        help='Playback speed multiplier (default: 1.0)')
+    parser.add_argument('--record', action='store_true',
+                       help='Record video instead of interactive playback')
     args = parser.parse_args()
 
     # Infer config path from trajectory name
@@ -119,13 +154,21 @@ if __name__ == "__main__":
     print(f"Adding {len(visuals)} visuals to XML")
     xml_string = add_mesh_barriers_to_xml(scene_file, barriers, visuals)
 
+    # Add offscreen framebuffer size for recording
+    if args.record:
+        mujoco_tag_match = re.search(r'<mujoco[^>]*>', xml_string)
+        if mujoco_tag_match:
+            insert_pos = mujoco_tag_match.end()
+            visual_settings = '\n  <visual>\n    <global offwidth="1920" offheight="1080"/>\n  </visual>'
+            xml_string = xml_string[:insert_pos] + visual_settings + xml_string[insert_pos:]
+
     # Debug: save XML to see if visual was added
     with open('debug_scene.xml', 'w') as f:
         f.write(xml_string)
     print("XML written to debug_scene.xml for inspection")
 
     # Load saved trajectories
-    trajectory_dir = "final_trajectories"
+    trajectory_dir = "final_trajectories_0.0035"
     hand_traj_path = os.path.join(trajectory_dir, f"{args.trajectory_name}_hand.npy")
     object_traj_path = os.path.join(trajectory_dir, f"{args.trajectory_name}_object.npy")
 
@@ -136,6 +179,10 @@ if __name__ == "__main__":
 
     qpos = np.load(hand_traj_path)
     retargeted_spline_pos = np.load(object_traj_path)
+
+    # Fix quaternion sign discontinuity to prevent hand spinning
+    # Wrist quaternion is at indices 3:7 (w,x,y,z format)
+    qpos = ensure_quaternion_continuity(qpos, quat_indices=(3, 7))
 
     print(f"\nLoaded trajectories:")
     print(f"  Hand: {hand_traj_path} (shape: {qpos.shape})")
@@ -193,7 +240,7 @@ if __name__ == "__main__":
     # Match main.py timestep calculation exactly
     # To speed up: decrease the coefficient (e.g., 0.5*seconds/frames for 4x faster)
     # To slow down: increase the coefficient (e.g., 4*seconds/frames for 2x slower)
-    m.opt.timestep = 4*seconds/frames
+    m.opt.timestep = 2*seconds/frames
 
     print(f"\nPlayback info:")
     print(f"  Frames: {frames}")
@@ -227,32 +274,55 @@ if __name__ == "__main__":
     else:
         print(f"  Contact visualization: disabled (no contacts file)")
 
-    # Playback loop
-    print("\nStarting playback... (close viewer to exit)")
+    # Recording or playback
+    if args.record:
+        print("\nRecording animation...")
+        video_path = f"final_trajectories/{args.trajectory_name}.mp4"
+        os.makedirs("final_trajectories", exist_ok=True)
 
-    with mujoco.viewer.launch_passive(m, d) as viewer:
-        i = 0
-        while viewer.is_running():
-            step_start = time.time()
+        # Load object mesh for contact visualization
+        object_mesh = trimesh.load(object_mesh_file, process=False)
 
-            # Loop trajectory
-            if i >= frames:
-                i = 0
+        renderer = mujoco.Renderer(m, height=1080, width=1920)
 
-            # Set hand and object pose
+        # Set up visualization options
+        scene_option = mujoco.MjvOption()
+        scene_option.geomgroup[0] = 0  # Disable group 0
+        scene_option.geomgroup[1] = 0  # Disable group 0
+        scene_option.geomgroup[5] = 1  # Enable group 5
+
+        # Set up camera
+        cam = mujoco.MjvCamera()
+        cam.azimuth = 108.9
+        cam.elevation = -23.4
+        cam.distance = 5.430
+        cam.lookat[:] = [0.983, 0.561, -0.635]
+
+        # cam.azimuth = 168.7
+        # cam.elevation = -40.5
+        # cam.distance = 2.898
+        # cam.lookat[:] = [-0.694, -1.136, 0.018]
+
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = int(1.0 / m.opt.timestep)
+        video_writer = cv2.VideoWriter(video_path, fourcc, fps, (1920, 1080))
+
+        for i in range(frames):
             d.qpos = qpos[:, i]
             d.mocap_pos[0] = retargeted_spline_pos[i, :3]
             d.mocap_quat[0] = retargeted_spline_pos[i, 3:]
             mujoco.mj_forward(m, d)
 
-            # Visualize contacts, barriers, and waypoints
-            geometry_count = 0
+            renderer.update_scene(d, camera=cam, scene_option=scene_option)
 
-            # Draw waypoints
+            # Add custom geometry to the scene
+            geometry_count = renderer.scene.ngeom
+
+            # Waypoints
             if waypts is not None:
                 for j in range(len(waypts)):
                     mujoco.mjv_initGeom(
-                        viewer.user_scn.geoms[geometry_count],
+                        renderer.scene.geoms[geometry_count],
                         type=mujoco.mjtGeom.mjGEOM_SPHERE,
                         size=[0.01, 0, 0],
                         pos=waypts[j][0],
@@ -260,15 +330,14 @@ if __name__ == "__main__":
                         rgba=np.array([0, 0, 0, 1]))
                     geometry_count += 1
 
-            # Draw primitive barriers (mesh barriers are already in the MuJoCo model)
-            if barriers is not None and len(barriers) > 0:
-                for j, barrier in enumerate(barriers):
+            # Barriers
+            if barriers is not None:
+                for barrier in barriers:
                     if isinstance(barrier, str):
-                        # Mesh barriers are already in the MuJoCo scene, skip
                         continue
                     elif barrier[0] == 'sphere':
                         mujoco.mjv_initGeom(
-                            viewer.user_scn.geoms[geometry_count],
+                            renderer.scene.geoms[geometry_count],
                             type=mujoco.mjtGeom.mjGEOM_SPHERE,
                             size=[barrier[1]['rad'], 0, 0],
                             pos=barrier[1]['pos'],
@@ -277,7 +346,7 @@ if __name__ == "__main__":
                         geometry_count += 1
                     elif barrier[0] == 'rect':
                         mujoco.mjv_initGeom(
-                            viewer.user_scn.geoms[geometry_count],
+                            renderer.scene.geoms[geometry_count],
                             type=mujoco.mjtGeom.mjGEOM_BOX,
                             size=np.array(barrier[1]['dims']) / 2,
                             pos=barrier[1]['pos'],
@@ -285,65 +354,103 @@ if __name__ == "__main__":
                             rgba=[0.5, 0.5, 0.5, 0.3])
                         geometry_count += 1
 
-            '''if hand_contacts is not None and object_contacts is not None:
-                # Object contacts (red)
-                if isinstance(object_contacts[i], np.ndarray):
-                    import trimesh
-                    object_mesh = trimesh.load(object_mesh_file, process=False)
+            # Object contacts
+            if object_contacts is not None and isinstance(object_contacts[i], np.ndarray):
+                # Convert object rotation for contacts
+                quat_scipy = np.array([d.mocap_quat[0, 1], d.mocap_quat[0, 2], d.mocap_quat[0, 3], d.mocap_quat[0, 0]])
+                rotation = R.from_quat(quat_scipy)
+                rotation_matrix = rotation.as_matrix()
 
-                    quat_scipy = np.array([d.mocap_quat[0, 1], d.mocap_quat[0, 2],
-                                          d.mocap_quat[0, 3], d.mocap_quat[0, 0]])
-                    rotation = R.from_quat(quat_scipy)
-                    rotation_matrix = rotation.as_matrix()
+                for j in range(len(object_contacts[i])):
+                    local_vertex = object_mesh.vertices[object_contacts[i][j]]
+                    world_vertex = (rotation_matrix @ local_vertex + d.mocap_pos[0])
 
-                    for j in range(len(object_contacts[i])):
-                        local_vertex = object_mesh.vertices[object_contacts[i][j]]
-                        world_vertex = (rotation_matrix @ local_vertex + d.mocap_pos)[0]
+                    mujoco.mjv_initGeom(
+                        renderer.scene.geoms[geometry_count],
+                        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                        size=[0.001, 0, 0],
+                        pos=np.array(world_vertex),
+                        mat=np.eye(3).flatten(),
+                        rgba=np.array([1, 0, 0, 1]))
+                    geometry_count += 1
 
+            renderer.scene.ngeom = geometry_count
+
+            frame = renderer.render()
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            video_writer.write(frame_bgr)
+
+        video_writer.release()
+        renderer.close()
+        print(f"Video saved to: {video_path}")
+
+    else:
+        # Playback loop
+        print("\nStarting playback... (close viewer to exit)")
+
+        with mujoco.viewer.launch_passive(m, d) as viewer:
+            i = 0
+            while viewer.is_running():
+                step_start = time.time()
+
+                # Loop trajectory
+                if i >= frames:
+                    i = 0
+
+                # Set hand and object pose
+                d.qpos = qpos[:, i]
+                d.mocap_pos[0] = retargeted_spline_pos[i, :3]
+                d.mocap_quat[0] = retargeted_spline_pos[i, 3:]
+                mujoco.mj_forward(m, d)
+
+                # Visualize contacts, barriers, and waypoints
+                geometry_count = 0
+
+                # Draw waypoints
+                if waypts is not None:
+                    for j in range(len(waypts)):
                         mujoco.mjv_initGeom(
                             viewer.user_scn.geoms[geometry_count],
                             type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                            size=[0.001, 0, 0],
-                            pos=np.array(world_vertex),
+                            size=[0.01, 0, 0],
+                            pos=waypts[j][0],
                             mat=np.eye(3).flatten(),
-                            rgba=np.array([1, 0, 0, 1])
-                        )
+                            rgba=np.array([0, 0, 0, 1]))
                         geometry_count += 1
 
-                # Hand contacts (blue)
-                hand_component_offset = 2
-                from handContacts import get_local_pos, local_to_global
-
-                for component_id in range(len(hand_components)):
-                    contacts_this_frame = hand_contacts[component_id][i]
-                    if contacts_this_frame is not None:
-                        for contact in contacts_this_frame:
-                            face_id, bary_coords, object_contact_idx = contact
-                            local_pos = get_local_pos(
-                                face_id, bary_coords,
-                                hand_components[component_id][0],
-                                hand_components[component_id][1]
-                            )
-                            global_pos = local_to_global(local_pos, component_id + hand_component_offset, d)
-
+                # Draw primitive barriers (mesh barriers are already in the MuJoCo model)
+                if barriers is not None and len(barriers) > 0:
+                    for j, barrier in enumerate(barriers):
+                        if isinstance(barrier, str):
+                            # Mesh barriers are already in the MuJoCo scene, skip
+                            continue
+                        elif barrier[0] == 'sphere':
                             mujoco.mjv_initGeom(
                                 viewer.user_scn.geoms[geometry_count],
                                 type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                                size=[0.003, 0, 0],
-                                pos=np.array(global_pos),
+                                size=[barrier[1]['rad'], 0, 0],
+                                pos=barrier[1]['pos'],
                                 mat=np.eye(3).flatten(),
-                                rgba=np.array([0, 0, 1, 1])
-                            )
-                            geometry_count += 1'''
+                                rgba=[0.5, 0.5, 0.5, 0.3])
+                            geometry_count += 1
+                        elif barrier[0] == 'rect':
+                            mujoco.mjv_initGeom(
+                                viewer.user_scn.geoms[geometry_count],
+                                type=mujoco.mjtGeom.mjGEOM_BOX,
+                                size=np.array(barrier[1]['dims']) / 2,
+                                pos=barrier[1]['pos'],
+                                mat=np.eye(3).flatten(),
+                                rgba=[0.5, 0.5, 0.5, 0.3])
+                            geometry_count += 1
 
-            viewer.user_scn.ngeom = geometry_count
-            viewer.sync()
-            i += 1
+                viewer.user_scn.ngeom = geometry_count
+                viewer.sync()
+                i += 1
 
-            elapsed = time.time() - step_start
-            time_until_next_step = m.opt.timestep - elapsed
+                elapsed = time.time() - step_start
+                time_until_next_step = m.opt.timestep - elapsed
 
-            if time_until_next_step > 0:
-                time.sleep(time_until_next_step)
+                if time_until_next_step > 0:
+                    time.sleep(time_until_next_step)
 
-    print("\nPlayback finished.")
+        print("\nPlayback finished.")

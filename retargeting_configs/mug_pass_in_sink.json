@@ -3,13 +3,6 @@
   "task": "mug_pass",
   "scene_file": "kitchen2.xml",
   "barriers": [
-    [
-      "rect",
-      {
-        "dims": [0.7, 0.08, 1],
-        "pos": [0.29, -1.75, 1.42]
-      }
-    ]
   ],
   "learning_rate": 0.01,
   "n_iter": 1000,
@@ -17,10 +10,10 @@
   "boundary_radius": 0.1,
   "hand_boundary_radius": 0.1,
   "new_start_pos_shift": [0, 0, 0],
-  "end_final_pos_shift": [0, 0, 0],
-  "end_obj_pos_shift": [0, 0, 0],
-  "waypts": [[[0, 0, 0.1], 0.68, 0.75], [[0, 0, 0.15], 0.7, 0.84, [180, 0, 0]]],
-  "extra_pt_count": 0,
+  "end_final_pos_shift": [-0.1, 0.5, -0.2],
+  "end_obj_pos_shift": [0, 0, 0.2],
+  "waypts": [],
+  "extra_pt_count": 30,
   "optimization_device": "cpu",
   "object_mesh_file": "/Users/hjp/desktop/exports/s1/mug_pass_1_full_export_objectmesh.obj",
   "rotation": [0, 0, -101.386]

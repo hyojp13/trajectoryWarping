@@ -282,7 +282,7 @@ def create_quaternion_bspline(quats, waypts_info=None, smoothing_factor=0.001, d
     return spline, t
 
 
-def smooth_hand_trajectory(qpos, frames, AGENT, window_length=21, polyorder=3, visualize=False):
+def smooth_hand_trajectory(qpos, frames, AGENT, window_length=5, polyorder=3, visualize=False):
     """
     Smooth hand trajectory including translation, wrist rotation, and finger joints.
 
