@@ -9,6 +9,11 @@ description = "Kinematic non-rigid spatio-temporal trajectory warping for contac
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+authors = [
+    { name = "Hyojae Park" },
+    { name = "Arjun S. Lakshmipathy" },
+    { name = "Nancy S. Pollard" },
+]
 dependencies = [
     "mujoco==3.2.7",
     "scipy==1.15.1",

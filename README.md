@@ -306,7 +306,7 @@ python playback_franka.py    # replay the saved Franka result
 @inproceedings{trajwarp2026,
   title     = {Kinematic Non-Rigid Spatio-Temporal Trajectory Warping for
                Contact-Rich Dexterous Manipulation Demonstrations},
-  author    = {Anonymous},
+  author    = {Park, Hyojae and Lakshmipathy, Arjun S. and Pollard, Nancy S.},
   booktitle = {IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)},
   year      = {2026}
 }
@@ -318,4 +318,4 @@ works as appropriate when using the data.
 
 ## License
 
-Released under the MIT License (anonymized for review).
+Released under the MIT License.
