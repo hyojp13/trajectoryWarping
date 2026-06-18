@@ -1,7 +1,7 @@
 {
   "agent": "trajectories",
   "task": "mug_pass",
-  "scene_file": "kitchen2.xml",
+  "scene_file": "scenes/kitchen2.xml",
   "barriers": [
     [
       "rect",
@@ -22,6 +22,6 @@
   "waypts": [[[0, 1.3, 0.06], 0.48, 0.4], [[0, 1.3, 0.24], 0.5, 0.5, [180, 0, 0]], [[0, -0.17, 0.3], 0.66, 0.8]],
   "extra_pt_count": 0,
   "optimization_device": "cpu",
-  "object_mesh_file": "/Users/hjp/desktop/exports/s1/mug_pass_1_full_export_objectmesh.obj",
+  "object_mesh_file": "meshes/mug_pass_1_full_export_objectmesh.obj",
   "rotation": [0, 0, -101.386]
 }

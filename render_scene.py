@@ -15,9 +15,9 @@ import cv2
 
 from scipy.spatial.transform import Rotation as R
 
-from barrier import process_barriers
-from generate_barrier import add_mesh_barriers_to_xml
-from parse_splines import parseSplines
+from trajwarp.object_warp.barriers import process_barriers
+from trajwarp.io.scene_xml import add_mesh_barriers_to_xml
+from trajwarp.io.spline_io import parseSplines
 
 
 def convert_to_quaternions_object(qpos_spline_data):

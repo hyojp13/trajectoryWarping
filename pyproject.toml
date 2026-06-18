@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trajwarp"
+version = "1.0.0"
+description = "Kinematic non-rigid spatio-temporal trajectory warping for contact-rich dexterous manipulation demonstrations."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "mujoco==3.2.7",
+    "scipy==1.15.1",
+    "torch==2.6.0",
+    "scikit-learn==1.6.1",
+    "trimesh==4.6.6",
+    "rtree==1.4.0",
+    "open3d==0.19.0",
+    "jsonschema==4.26.0",
+]
+
+[project.optional-dependencies]
+# Used only by the optional figure/video rendering scripts.
+viz = ["opencv-python", "matplotlib"]
+
+[project.urls]
+Repository = "https://github.com/hyojp13/trajectoryRetargeting"
+
+# The repo is run as scripts from its root; only the library package (and its
+# subpackages) is installed.
+[tool.setuptools.packages.find]
+include = ["trajwarp*"]

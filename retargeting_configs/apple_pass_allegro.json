@@ -1,7 +1,7 @@
 {
   "agent": "Allegro_right",
   "task": "apple_pass",
-  "scene_file": "kitchen2.xml",
+  "scene_file": "scenes/kitchen2.xml",
   "barriers": [
   ],
   "learning_rate": 0.01,
@@ -17,11 +17,11 @@
   ],
   "extra_pt_count": 1,
   "optimization_device": "cpu",
-  "object_mesh_file": "/Users/hjp/desktop/trajectoryRetargeting/tasks/apple.obj",
+  "object_mesh_file": "meshes/apple.obj",
   "rotation": [0, 0, 0],
   "visuals": [
     [
-      "/Users/hjp/Desktop/robocasa/robocasa/models/assets/objects/objaverse/plate/plate_3/visual/model_normalized_0.obj",
+      "meshes/model_normalized_0.obj",
       {
         "pos": [2.62, -2.1, 1.05],
         "scale": [0.23, 0.2, 0.2],
@@ -30,7 +30,7 @@
       }
     ],
     [
-      "/Users/hjp/desktop/exports/s1/cubelarge_inspect_1_full_export_objectmesh.obj",
+      "meshes/cubelarge_inspect_1_full_export_objectmesh.obj",
       {
         "scale": [1.5, 1.5, 1],
         "pos": [2.62, -2.1, 0.98],

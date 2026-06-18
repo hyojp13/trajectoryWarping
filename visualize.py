@@ -21,7 +21,7 @@ def load_and_visualize_xml(xml_file_path):
             time.sleep(0.01)
 
 if __name__ == "__main__":
-    xml_file = "kitchen.xml"
+    xml_file = "scenes/kitchen.xml"
     xml_file = "scene.xml"
     # xml_file = "env.xml"
     

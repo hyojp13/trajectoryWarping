@@ -1,7 +1,7 @@
 {
   "agent": "trajectories",
   "task": "cube",
-  "scene_file": "kitchen2.xml",
+  "scene_file": "scenes/kitchen2.xml",
   "barriers": [
   ],
   "learning_rate": 0.01,
@@ -16,53 +16,53 @@
   ],
   "extra_pt_count": 1,
   "optimization_device": "cpu",
-  "object_mesh_file": "/Users/hjp/desktop/exports/s1/cubemedium_inspect_1_full_export_objectmesh.obj",
+  "object_mesh_file": "meshes/cubemedium_inspect_1_full_export_objectmesh.obj",
   "rotation": [0, 0, 0],
   "visuals": [
     [
-      "/Users/hjp/desktop/exports/s1/cubemedium_inspect_1_full_export_objectmesh.obj",
+      "meshes/cubemedium_inspect_1_full_export_objectmesh.obj",
       {
         "scale": [2, 2, 2],
         "pos": [3.1, -2.5, 1]
       }
     ],
     [
-      "/Users/hjp/desktop/exports/s1/cubemedium_inspect_1_full_export_objectmesh.obj",
+      "meshes/cubemedium_inspect_1_full_export_objectmesh.obj",
       {
         "scale": [1, 1, 1],
         "pos": [2.55, -2.3, 1.05]
       }
     ],
     [
-      "/Users/hjp/desktop/exports/s1/cylindersmall_inspect_1_full_export_objectmesh.obj",
+      "meshes/cylindersmall_inspect_1_full_export_objectmesh.obj",
       {
         "scale": [3, 3, 3],
         "pos": [3, -2.3, 1.05]
       }
     ],
     [
-      "/Users/hjp/desktop/exports/s1/cylindersmall_inspect_1_full_export_objectmesh.obj",
+      "meshes/cylindersmall_inspect_1_full_export_objectmesh.obj",
       {
         "scale": [2, 2, 2],
         "pos": [3, -2.3, 1.15]
       }
     ],
     [
-      "/Users/hjp/desktop/exports/s1/cylindersmall_inspect_1_full_export_objectmesh.obj",
+      "meshes/cylindersmall_inspect_1_full_export_objectmesh.obj",
       {
         "scale": [2, 2, 2],
         "pos": [2.88, -2.3, 1.05]
       }
     ],
     [
-      "/Users/hjp/desktop/exports/s1/cubelarge_inspect_1_full_export_objectmesh.obj",
+      "meshes/cubelarge_inspect_1_full_export_objectmesh.obj",
       {
         "scale": [1, 1, 1],
         "pos": [2.6, -2.5, 0.97]
       }
     ],
     [
-      "/Users/hjp/desktop/exports/s1/cubelarge_inspect_1_full_export_objectmesh.obj",
+      "meshes/cubelarge_inspect_1_full_export_objectmesh.obj",
       {
         "scale": [1, 1, 1],
         "pos": [2.6, -2.5, 1.09],

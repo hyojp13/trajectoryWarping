@@ -23,8 +23,8 @@ def time_to_rgb(t):
     return r, g, b
 
 
-from handContacts import get_mesh_for_body
-from load_contacts import load_contacts_lcexp
+from trajwarp.hand_warp.hand_mesh import get_mesh_for_body
+from trajwarp.io.contact_io import load_contacts_lcexp
 
 
 def ensure_quaternion_continuity(qpos, quat_indices=(3, 7)):
@@ -118,8 +118,8 @@ def render_frames(config_path, trajectory_name, method, frames_to_render, output
     build_env_xml(AGENT, TASK)
 
     # Process barriers
-    from barrier import process_barriers
-    from generate_barrier import add_mesh_barriers_to_xml
+    from trajwarp.object_warp.barriers import process_barriers
+    from trajwarp.io.scene_xml import add_mesh_barriers_to_xml
     barriers = [tuple(b) if isinstance(b, list) else b for b in barriers]
     barriers = process_barriers(barriers)
 
@@ -191,7 +191,7 @@ def render_frames(config_path, trajectory_name, method, frames_to_render, output
 
     if os.path.exists(contacts_file):
         try:
-            from contacts import process_contacts
+            from trajwarp.hand_warp.correspondences import process_contacts
             contacts_lcexp = load_contacts_lcexp(contacts_file)
 
             # Compute hand component meshes
@@ -410,8 +410,8 @@ def render_overlay(config_path, trajectory_name, method, overlay_frames, output_
 
     build_env_xml(AGENT, TASK)
 
-    from barrier import process_barriers
-    from generate_barrier import add_mesh_barriers_to_xml
+    from trajwarp.object_warp.barriers import process_barriers
+    from trajwarp.io.scene_xml import add_mesh_barriers_to_xml
     barriers = [tuple(b) if isinstance(b, list) else b for b in barriers]
     barriers = process_barriers(barriers)
 

@@ -1,7 +1,7 @@
 {
   "agent": "trajectories",
   "task": "fryingpan_cook",
-  "scene_file": "kitchen2.xml",
+  "scene_file": "scenes/kitchen2.xml",
   "barriers": [
     [
       "rect",
@@ -43,6 +43,6 @@
   "waypts": [[[-0.2, 0, 0.15], 0.4, 0.2]],
   "extra_pt_count": 20,
   "optimization_device": "cpu",
-  "object_mesh_file": "/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj",
+  "object_mesh_file": "meshes/fryingpan_cook_2_full_export_objectmesh.obj",
   "rotation": [0, 0, 146.441]
 }

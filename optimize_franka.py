@@ -16,8 +16,8 @@ import os
 import re
 from scipy.spatial.transform import Rotation as R
 
-from differentiable_fk import extract_kinematic_tree, precompute_kinematic_tree_tensors, precompute_local_hand_contacts
-from optimize_contacts import optimize_frame
+from trajwarp.hand_warp.fk import extract_kinematic_tree, precompute_kinematic_tree_tensors, precompute_local_hand_contacts
+from trajwarp.hand_warp.optimizer import optimize_frame
 
 
 def load_franka_trajectory(pkl_path):
@@ -269,7 +269,7 @@ def render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, outp
                    object_mesh=None, object_contacts=None, hand_contacts=None,
                    hand_components=None, hand_component_offset=0, barriers=None, waypts=None):
     """Render specific frames to images using offscreen renderer."""
-    from handContacts import get_local_pos, local_to_global
+    from trajwarp.hand_warp.hand_mesh import get_local_pos, local_to_global
 
     renderer = mujoco.Renderer(m, height=1080, width=1920)
 
@@ -470,7 +470,7 @@ if __name__ == "__main__":
     print(f"\nHand components: {hand_components_len} bodies (from {link0_id} to {right_finger_id})")
 
     # Extract actual meshes for ALL bodies in the kinematic chain
-    from handContacts import get_mesh_for_body
+    from trajwarp.hand_warp.hand_mesh import get_mesh_for_body
     hand_components = []
     for body_id in range(hand_component_offset, hand_component_offset + hand_components_len):
         try:
@@ -569,8 +569,8 @@ if __name__ == "__main__":
         print(f"  Waypoint {i}: pos={wp[0]}, t_start={wp[1]}, t_end={wp[2]}")
 
     # Apply trajectory constraints with waypoints
-    from trajectory import apply_waypoint_rotations, transformSplines
-    from barrier import barrierConstraints, process_barriers, read_obj, moveToEndPt
+    from trajwarp.object_warp.spatial import apply_waypoint_rotations, transformSplines
+    from trajwarp.object_warp.barriers import barrierConstraints, process_barriers, read_obj, moveToEndPt
 
     # Process barriers (apply scale and position transformations)
     barriers = process_barriers(barriers)
@@ -723,7 +723,7 @@ if __name__ == "__main__":
         d.qpos[:16] = initial_qpos
         mujoco.mj_forward(m, d)
 
-        from handContacts import get_local_pos
+        from trajwarp.hand_warp.hand_mesh import get_local_pos
         for hand_component_id in hand_contacts:
             contacts_this_frame = hand_contacts[hand_component_id][frame]
             if contacts_this_frame is None:
@@ -739,7 +739,7 @@ if __name__ == "__main__":
                 global_hand_pos = body_rot @ local_pos + body_pos
 
                 # Get corresponding object contact
-                from optimize_contacts import compute_global_object_contacts
+                from trajwarp.hand_warp.optimizer import compute_global_object_contacts
                 global_object_contacts = compute_global_object_contacts(
                     object_qpos_frame, object_mesh, object_contacts, frame
                 )
@@ -786,7 +786,7 @@ if __name__ == "__main__":
                 body_rot = d.xmat[body_id].reshape(3, 3)
                 global_hand_pos = body_rot @ local_pos + body_pos
 
-                from optimize_contacts import compute_global_object_contacts
+                from trajwarp.hand_warp.optimizer import compute_global_object_contacts
                 global_object_contacts = compute_global_object_contacts(
                     object_qpos_frame, object_mesh, object_contacts, frame
                 )
@@ -802,7 +802,7 @@ if __name__ == "__main__":
 
     # Smooth arm trajectory using smooth_hand_trajectory
     print("\n=== Smoothing Arm Trajectory ===")
-    from smoothspline import smooth_hand_trajectory
+    from trajwarp.object_warp.smoothing import smooth_hand_trajectory
 
     # Use same smoothing as main.py: window_length=21, polyorder=3
     hand_qpos = smooth_hand_trajectory(hand_qpos, n_frames, 'Franka',
@@ -846,7 +846,7 @@ if __name__ == "__main__":
 
     # Recreate model with kitchen scene for visualization
     import xml.etree.ElementTree as ET
-    tree = ET.parse('franka_in_kitchen.xml')
+    tree = ET.parse('scenes/franka_in_kitchen.xml')
     root = tree.getroot()
     xml_vis = ET.tostring(root, encoding='unicode')
 
@@ -1037,7 +1037,7 @@ if __name__ == "__main__":
 
             # Draw contact points on hand/fingers (green)
             # Use actual contact vertices from hand_contacts
-            from handContacts import get_local_pos, local_to_global
+            from trajwarp.hand_warp.hand_mesh import get_local_pos, local_to_global
 
             # Process hand contacts for this frame
             for hand_component_id in hand_contacts:

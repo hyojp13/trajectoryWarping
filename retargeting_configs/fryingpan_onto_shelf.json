@@ -1,7 +1,7 @@
 {
   "agent": "trajectories",
   "task": "fryingpan_cook",
-  "scene_file": "kitchen2.xml",
+  "scene_file": "scenes/kitchen2.xml",
   "barriers": [
     [
       "rect",
@@ -36,11 +36,11 @@
   "waypts": [[[0, 0, 0.15], 0.4, 0.4], [[0, 0, 0.2], 0.5, 0.5], [[0.1, 0, 0.2], 0.6, 0.7, [0, 30, 0]], [[0.3, 0, 0.3], 0.7, 0.8, [0, 80, 0]]],
   "extra_pt_count": 20,
   "optimization_device": "cpu",
-  "object_mesh_file": "/Users/hjp/desktop/exports/s1/fryingpan_cook_2_full_export_objectmesh.obj",
+  "object_mesh_file": "meshes/fryingpan_cook_2_full_export_objectmesh.obj",
   "rotation": [0, 0, 146.441],
   "visuals": [
     [
-      "/Users/hjp/Desktop/robocasa/robocasa/models/assets/objects/objaverse/plate/plate_3/visual/model_normalized_0.obj",
+      "meshes/model_normalized_0.obj",
       {
         "pos": [3.12, -0.18, 1.54],
         "scale": [0.23, 0.2, 0.2],
@@ -49,7 +49,7 @@
       }
     ],
     [
-      "/Users/hjp/Desktop/robocasa/robocasa/models/assets/objects/objaverse/plate/plate_3/visual/model_normalized_0.obj",
+      "meshes/model_normalized_0.obj",
       {
         "pos": [3.1, -0.18, 1.54],
         "scale": [0.23, 0.2, 0.2],

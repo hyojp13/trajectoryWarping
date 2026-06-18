@@ -8,8 +8,8 @@ import json
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from parse_splines import parseSplines
-from load_contacts import load_contacts_lcexp, get_contact_frame_range
+from trajwarp.io.spline_io import parseSplines
+from trajwarp.io.contact_io import load_contacts_lcexp, get_contact_frame_range
 
 
 def load_config(config_path):

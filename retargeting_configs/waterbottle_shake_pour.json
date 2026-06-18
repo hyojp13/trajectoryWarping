@@ -1,7 +1,7 @@
 {
   "agent": "trajectories",
   "task": "waterbottle_shake",
-  "scene_file": "kitchen2.xml",
+  "scene_file": "scenes/kitchen2.xml",
   "barriers": [
   ],
   "learning_rate": 0.01,
@@ -15,6 +15,6 @@
   "waypts": [[[0.1, -0.1, 0.2], 0.25, 0.1, [0, 0, 0]], [[0.1, -0.1, 0.2], 0.42, 0.4, [0, 0, 0]], [[0.6, -0.75, 0.4], 0.43, 0.5, [30, 0, 0]], [[0.6, -0.75, 0.4], 0.445, 0.7, [80, 0, 0]], [[0.6, -0.7, 0.4], 0.45, 0.95, [-110, 0, 0]]],
   "extra_pt_count": 0,
   "optimization_device": "cpu",
-  "object_mesh_file": "/Users/hjp/desktop/exports/s7/waterbottle_shake_1_full_export_objectmesh.obj",
+  "object_mesh_file": "meshes/waterbottle_shake_1_full_export_objectmesh.obj",
   "rotation": [0, 0, 0]
 }

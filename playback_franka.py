@@ -111,7 +111,7 @@ def create_franka_xml_with_menagerie(object_mesh_path=None, use_kitchen=True):
         # Use unified kitchen + Franka XML
         import xml.etree.ElementTree as ET
 
-        tree = ET.parse('franka_in_kitchen.xml')
+        tree = ET.parse('scenes/franka_in_kitchen.xml')
         root = tree.getroot()
 
         # Add object mesh if provided

@@ -11,11 +11,11 @@ Shows:
 import numpy as np
 import matplotlib.pyplot as plt
 import json
-from parse_splines import parseSplines
-from load_contacts import load_contacts_lcexp, get_contact_frame_range
-from smoothspline import create_smoothing_bspline
-from trajectory import trajectoryConstraintsPolyline
-from barrier import read_obj
+from trajwarp.io.spline_io import parseSplines
+from trajwarp.io.contact_io import load_contacts_lcexp, get_contact_frame_range
+from trajwarp.object_warp.smoothing import create_smoothing_bspline
+from trajwarp.object_warp.spatial import trajectoryConstraintsPolyline
+from trajwarp.object_warp.barriers import read_obj
 from scipy.spatial.transform import Rotation as R
 
 

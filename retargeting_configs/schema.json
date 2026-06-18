@@ -1,0 +1,197 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/hyojp13/trajectoryRetargeting/main/retargeting_configs/schema.json",
+  "title": "trajwarp retargeting configuration",
+  "description": "One warping trial: the demonstration/scene to start from, the spatio-temporal waypoints and barriers that reshape it, and the optimizer settings used to recover the hand. Mirrors trajwarp.io.config.RetargetConfig.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "agent",
+    "task",
+    "scene_file",
+    "object_mesh_file",
+    "barriers",
+    "learning_rate",
+    "n_iter",
+    "first_frame_iter",
+    "boundary_radius",
+    "hand_boundary_radius",
+    "new_start_pos_shift",
+    "end_final_pos_shift",
+    "end_obj_pos_shift",
+    "waypts",
+    "extra_pt_count",
+    "optimization_device",
+    "rotation"
+  ],
+  "definitions": {
+    "vec3": {
+      "type": "array",
+      "description": "A 3-vector [x, y, z].",
+      "items": { "type": "number" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "waypoint": {
+      "type": "array",
+      "description": "A spatio-temporal waypoint: [position_shift, t_in, t_out] with an optional 4th [roll, pitch, yaw] (degrees) rotation. position_shift is added to the demonstration's object position; t_in is the normalized time along the input trajectory (0-1) the waypoint applies to; t_out is the normalized time it is moved to in the output.",
+      "items": [
+        { "$ref": "#/definitions/vec3" },
+        { "type": "number", "minimum": 0, "maximum": 1 },
+        { "type": "number", "minimum": 0, "maximum": 1 }
+      ],
+      "additionalItems": { "$ref": "#/definitions/vec3" },
+      "minItems": 3,
+      "maxItems": 4
+    },
+    "barrier": {
+      "type": "array",
+      "description": "An obstacle the object trajectory must avoid: [shape, params].",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": [
+        { "type": "string", "enum": ["rect", "sphere"] },
+        {
+          "type": "object",
+          "properties": {
+            "pos": { "$ref": "#/definitions/vec3" },
+            "dims": { "$ref": "#/definitions/vec3" },
+            "rad": { "type": "number" }
+          },
+          "required": ["pos"],
+          "additionalProperties": true
+        }
+      ]
+    },
+    "visual": {
+      "type": "array",
+      "description": "A purely cosmetic mesh placed in the scene for rendering: [mesh_path, params].",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": [
+        { "type": "string" },
+        {
+          "type": "object",
+          "properties": {
+            "pos": { "$ref": "#/definitions/vec3" },
+            "scale": { "$ref": "#/definitions/vec3" },
+            "rotation": { "$ref": "#/definitions/vec3" },
+            "rgba": {
+              "type": "array",
+              "items": { "type": "number" },
+              "minItems": 4,
+              "maxItems": 4
+            }
+          },
+          "required": ["pos"],
+          "additionalProperties": true
+        }
+      ]
+    }
+  },
+  "properties": {
+    "agent": {
+      "type": "string",
+      "description": "Hand model driving the demonstration. 'trajectories'/'MANO_right' use the MANO hand; 'Allegro_right' uses the Allegro hand.",
+      "enum": ["trajectories", "MANO_right", "Allegro_right"]
+    },
+    "task": {
+      "type": "string",
+      "description": "Task name; selects the demonstration data and the tasks/<task>.xml scene fragment."
+    },
+    "scene_file": {
+      "type": "string",
+      "description": "MuJoCo scene XML the demonstration plays in (e.g. 'kitchen2.xml')."
+    },
+    "object_mesh_file": {
+      "type": "string",
+      "description": "Repo-relative path to the manipulated object's mesh (e.g. 'meshes/apple.obj')."
+    },
+    "learning_rate": {
+      "type": "number",
+      "description": "Adam learning rate for the per-frame hand IK optimization.",
+      "exclusiveMinimum": 0
+    },
+    "n_iter": {
+      "type": "integer",
+      "description": "Optimizer iterations per contact frame (after the first).",
+      "minimum": 0
+    },
+    "first_frame_iter": {
+      "type": "integer",
+      "description": "Optimizer iterations for the first contact frame (usually larger, to find a good initial pose).",
+      "minimum": 0
+    },
+    "loss_threshold": {
+      "type": "number",
+      "description": "Early-stop threshold on the per-frame contact loss. Defaults to 0.0035 if omitted.",
+      "minimum": 0
+    },
+    "boundary_radius": {
+      "type": "number",
+      "description": "Inflation radius (Minkowski) applied to barriers when warping the OBJECT trajectory around them.",
+      "minimum": 0
+    },
+    "hand_boundary_radius": {
+      "type": "number",
+      "description": "Inflation radius applied to barriers when routing the HAND pre/post-contact segments around them.",
+      "minimum": 0
+    },
+    "new_start_pos_shift": {
+      "$ref": "#/definitions/vec3",
+      "description": "Translation applied to the object's start position."
+    },
+    "end_final_pos_shift": {
+      "$ref": "#/definitions/vec3",
+      "description": "Translation applied to the object's terminal position."
+    },
+    "end_obj_pos_shift": {
+      "$ref": "#/definitions/vec3",
+      "description": "Additional translation of the terminal object pose (used for placement targets)."
+    },
+    "waypts": {
+      "type": "array",
+      "description": "Spatio-temporal waypoints that reshape the trajectory in space and time.",
+      "items": { "$ref": "#/definitions/waypoint" }
+    },
+    "extra_pt_count": {
+      "type": "integer",
+      "description": "Number of extra interpolation points appended past the contact window (extends the post-contact trajectory).",
+      "minimum": 0
+    },
+    "optimization_device": {
+      "type": "string",
+      "description": "Torch device for hand IK.",
+      "enum": ["cpu", "cuda", "mps"]
+    },
+    "rotation": {
+      "$ref": "#/definitions/vec3",
+      "description": "[roll, pitch, yaw] in degrees applied to align the demonstration's keyframes into the scene frame."
+    },
+    "barriers": {
+      "type": "array",
+      "description": "Obstacles the warped object trajectory must avoid.",
+      "items": { "$ref": "#/definitions/barrier" }
+    },
+    "visuals": {
+      "type": "array",
+      "description": "Cosmetic meshes added to the scene for rendering only; they do not affect the warp.",
+      "items": { "$ref": "#/definitions/visual" }
+    },
+    "barrier_weight": {
+      "type": "number",
+      "description": "Weight of the hand-barrier penalty in the IK loss (only used when hand-barrier avoidance is enabled). Defaults to 0.6.",
+      "minimum": 0
+    },
+    "barrier_margin": {
+      "type": "number",
+      "description": "Signed-distance margin for the hand-barrier penalty. Defaults to 0.01.",
+      "minimum": 0
+    },
+    "barrier_n": {
+      "type": "number",
+      "description": "Sharpness exponent of the hand-barrier penalty. Defaults to 2.0.",
+      "minimum": 0
+    }
+  }
+}

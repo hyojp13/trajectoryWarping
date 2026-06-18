@@ -18,14 +18,14 @@ import shutil
 import colorsys
 import sys
 
-from parse_splines import parseSplines
-from trajectory import trajectoryConstraintsPolyline, apply_waypoint_rotations
-from barrier import process_barriers, barrierConstraints, correct_barrier_axes, read_obj, save_obj, moveToEndPt
-from generate_barrier import add_mesh_barriers_to_xml
-from smoothspline import create_smoothing_bspline, create_quaternion_bspline
-from handContacts import get_mesh_for_body, get_local_pos, local_to_global
-from load_contacts import load_contacts_lcexp, get_contact_frame_range
-from contacts import process_contacts
+from trajwarp.io.spline_io import parseSplines
+from trajwarp.object_warp.spatial import trajectoryConstraintsPolyline, apply_waypoint_rotations
+from trajwarp.object_warp.barriers import process_barriers, barrierConstraints, correct_barrier_axes, read_obj, save_obj, moveToEndPt
+from trajwarp.io.scene_xml import add_mesh_barriers_to_xml
+from trajwarp.object_warp.smoothing import create_smoothing_bspline, create_quaternion_bspline
+from trajwarp.hand_warp.hand_mesh import get_mesh_for_body, get_local_pos, local_to_global
+from trajwarp.io.contact_io import load_contacts_lcexp, get_contact_frame_range
+from trajwarp.hand_warp.correspondences import process_contacts
 
 
 def time_to_rgb(t):
