@@ -229,18 +229,6 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
             optimize_mask[7:] = True  # Arm and finger joints
         else:
             return qpos_init
-    elif agent_type == 'Adroit':
-        # Adroit: qpos = [ARTx, ARTy, ARTz, ARRx, ARRy, ARRz, 24 hand joints]
-        if optimize_wrist and optimize_joints:
-            optimize_mask = np.ones(len(qpos_init), dtype=bool)
-        elif optimize_wrist:
-            optimize_mask = np.zeros(len(qpos_init), dtype=bool)
-            optimize_mask[:6] = True  # Forearm translation + rotation
-        elif optimize_joints:
-            optimize_mask = np.zeros(len(qpos_init), dtype=bool)
-            optimize_mask[6:] = True  # Hand joints only
-        else:
-            return qpos_init
     else:  # Allegro_right
         if optimize_wrist and optimize_joints:
             optimize_mask = np.ones(len(qpos_init), dtype=bool)
@@ -413,19 +401,6 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
                             franka_joint_limits[i, 0],
                             franka_joint_limits[i, 1]
                         )
-            elif agent_type == 'Adroit':
-                # Adroit uses Euler angles for forearm rotation (ARRx, ARRy, ARRz at indices 3:6)
-                if optimize_wrist:
-                    # Clamp forearm rotation angles to [-pi, pi]
-                    for i in range(3, 6):
-                        if optimize_mask[i]:
-                            qpos_torch.data[i] = torch.clamp(
-                                qpos_torch.data[i],
-                                -np.pi,
-                                np.pi
-                            )
-                # Note: Hand joint limits would go here if needed, but typically
-                # MuJoCo handles this through the model definition
             else:  # Allegro_right
                 # Normalize wrist quaternion only
                 if optimize_mask[3] and optimize_mask[4] and optimize_mask[5] and optimize_mask[6]:
