@@ -1,6 +1,7 @@
 import time
 import os
 import re
+import sys
 
 import mujoco
 import mujoco.viewer
@@ -12,6 +13,14 @@ import torch
 import trimesh
 
 import xml.etree.cElementTree as ET
+
+import colorsys
+
+def time_to_rgb(t):
+    """Convert t in [0,1] to RGB using HSV hue: green(0) -> red(1)."""
+    hue = (1.0 - t) * 120.0 / 360.0
+    r, g, b = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+    return r, g, b
 
 from parse_splines import *
 from trajectory import *
@@ -127,10 +136,10 @@ def render_frames(m, d, qpos, object_qpos, frames, frames_to_render, output_dir,
 
     # Set up camera
     cam = mujoco.MjvCamera()
-    cam.azimuth = -179.7
-    cam.elevation = -6.0
-    cam.distance = 0.703
-    cam.lookat[:] = [2.427, -0.396, 1.124]
+    cam.azimuth = 89.7
+    cam.elevation = -6.5
+    cam.distance = 1.763
+    cam.lookat[:] = [2.378, 0.026, 1.353]
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -148,28 +157,28 @@ def render_frames(m, d, qpos, object_qpos, frames, frames_to_render, output_dir,
 
         geometry_count = renderer.scene.ngeom
 
-        # Object path (matte green spheres, contact region only, up to current frame)
-        draw_end = min(frame_idx + 1, contact_end + 1)
-        for j in range(contact_start, draw_end, 1):
-            mujoco.mjv_initGeom(
-                renderer.scene.geoms[geometry_count],
-                type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                size=[0.005, 0, 0],
-                pos=object_qpos[:3, j],
-                mat=np.eye(3).flatten(),
-                rgba=np.array([0.2, 0.8, 0.2, 1]))
-            geometry_count += 1
+        # # Object path (matte green spheres, contact region only, up to current frame)
+        # draw_end = min(frame_idx + 1, contact_end + 1)
+        # for j in range(contact_start, draw_end, 1):
+        #     mujoco.mjv_initGeom(
+        #         renderer.scene.geoms[geometry_count],
+        #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+        #         size=[0.005, 0, 0],
+        #         pos=object_qpos[:3, j],
+        #         mat=np.eye(3).flatten(),
+        #         rgba=np.array([0, 1, 0, 1]))
+        #     geometry_count += 1
 
         # Hand path (matte blue spheres, contact region only, up to current frame)
-        for j in range(contact_start, draw_end, 1):
-            mujoco.mjv_initGeom(
-                renderer.scene.geoms[geometry_count],
-                type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                size=[0.005, 0, 0],
-                pos=qpos[:3, j],
-                mat=np.eye(3).flatten(),
-                rgba=np.array([0.2, 0.2, 0.8, 1]))
-            geometry_count += 1
+        # for j in range(contact_start, draw_end, 1):
+        #     mujoco.mjv_initGeom(
+        #         renderer.scene.geoms[geometry_count],
+        #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+        #         size=[0.005, 0, 0],
+        #         pos=qpos[:3, j],
+        #         mat=np.eye(3).flatten(),
+        #         rgba=np.array([0.2, 0.2, 0.8, 1]))
+        #     geometry_count += 1
 
         renderer.scene.ngeom = geometry_count
 
@@ -183,6 +192,152 @@ def render_frames(m, d, qpos, object_qpos, frames, frames_to_render, output_dir,
     renderer.close()
 
 
+def render_overlay(m, d, qpos, object_qpos, frames, overlay_frames, output_dir,
+                   contact_start=0, contact_end=None):
+    """
+    Render a single composite image showing multiple hand/object poses overlaid.
+
+    The last frame in overlay_frames is rendered fully opaque. Earlier frames are
+    overlaid as semi-transparent ghosts with time-based tinting matching the
+    trajectory path gradient (green -> red).
+
+    Args:
+        m: MuJoCo model
+        d: MuJoCo data
+        qpos: (n_dof, frames) hand trajectory
+        object_qpos: (7, frames) object trajectory
+        frames: total number of frames
+        overlay_frames: sorted list of frame indices (e.g., [150, 250, 490])
+        output_dir: directory to save the composite image
+        contact_start: first contact frame index
+        contact_end: last contact frame index
+    """
+    if contact_end is None:
+        contact_end = frames - 1
+    overlay_frames = sorted([f for f in overlay_frames if f < frames])
+    if len(overlay_frames) == 0:
+        print("No valid overlay frames.")
+        return
+
+    print(f"\nOverlay render: frames {overlay_frames}")
+
+    renderer = mujoco.Renderer(m, height=1080, width=1920)
+
+    # Scene options with hand + object visible
+    scene_option = mujoco.MjvOption()
+    scene_option.geomgroup[0] = 0
+    scene_option.geomgroup[1] = 1   # scene
+    scene_option.geomgroup[2] = 1   # hand
+    scene_option.geomgroup[5] = 1   # object
+    scene_option.frame = mujoco.mjtFrame.mjFRAME_NONE
+    for i in range(6):
+        scene_option.sitegroup[i] = 0
+
+    # Scene options without hand + object (background only)
+    scene_option_bg = mujoco.MjvOption()
+    scene_option_bg.geomgroup[0] = 0
+    scene_option_bg.geomgroup[1] = 1   # scene
+    scene_option_bg.geomgroup[2] = 0   # hand OFF
+    scene_option_bg.geomgroup[5] = 0   # object OFF
+    scene_option_bg.frame = mujoco.mjtFrame.mjFRAME_NONE
+    for i in range(6):
+        scene_option_bg.sitegroup[i] = 0
+
+    cam = mujoco.MjvCamera()
+    cam.azimuth = 89.7
+    cam.elevation = -6.5
+    cam.distance = 1.763
+    cam.lookat[:] = [2.378, 0.026, 1.353]
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    last_frame = overlay_frames[-1]
+
+    # Render background (no hand/object) at the last frame's pose
+    d.qpos = qpos[:, last_frame]
+    d.mocap_pos = object_qpos[:3, last_frame]
+    d.mocap_quat = object_qpos[3:, last_frame]
+    mujoco.mj_forward(m, d)
+
+    renderer.update_scene(d, camera=cam, scene_option=scene_option_bg)
+    geometry_count = renderer.scene.ngeom
+
+    # Object trajectory path with time-varying color (green -> red), contact region only
+    draw_end = min(last_frame + 1, contact_end + 1)
+    contact_len = max(contact_end - contact_start, 1)
+    for j in range(contact_start, draw_end):
+        t = (j - contact_start) / contact_len
+        r, g, b = time_to_rgb(t)
+        mujoco.mjv_initGeom(
+            renderer.scene.geoms[geometry_count],
+            type=mujoco.mjtGeom.mjGEOM_SPHERE,
+            size=[0.005, 0, 0],
+            pos=object_qpos[:3, j],
+            mat=np.eye(3).flatten(),
+            rgba=np.array([r, g, b, 1]))
+        geometry_count += 1
+
+    renderer.scene.ngeom = geometry_count
+    bg_frame = renderer.render().copy()
+
+    # Composite image starts as the background
+    composite = bg_frame.astype(np.float64)
+
+    # Render each overlay frame and alpha-blend the hand/object onto composite
+    for idx, frame_idx in enumerate(overlay_frames):
+        d.qpos = qpos[:, frame_idx]
+        d.mocap_pos = object_qpos[:3, frame_idx]
+        d.mocap_quat = object_qpos[3:, frame_idx]
+        mujoco.mj_forward(m, d)
+
+        renderer.update_scene(d, camera=cam, scene_option=scene_option)
+        renderer.scene.ngeom = renderer.scene.ngeom
+        fg_frame = renderer.render().copy()
+
+        # Also render this frame without hand/object to get per-frame background
+        renderer.update_scene(d, camera=cam, scene_option=scene_option_bg)
+        renderer.scene.ngeom = renderer.scene.ngeom
+        fg_bg_frame = renderer.render().copy()
+
+        # Mask: pixels where hand/object are visible
+        diff = np.abs(fg_frame.astype(np.float64) - fg_bg_frame.astype(np.float64))
+        mask = (diff.max(axis=2) > 5).astype(np.float64)
+
+        # Time-based tint matching trajectory gradient (contact region only)
+        t = (frame_idx - contact_start) / max(contact_end - contact_start, 1)
+        t = np.clip(t, 0, 1)
+        tint = np.array(time_to_rgb(t))
+
+        is_last = (idx == len(overlay_frames) - 1)
+
+        if is_last:
+            # Last frame: fully opaque, original colors (no tint)
+            alpha = 1.0
+            blended_fg = fg_frame.astype(np.float64)
+        else:
+            # Earlier frames: semi-transparent, strongly colorized
+            alpha = 0.7
+            tint_strength = 0.7
+            fg_f = fg_frame.astype(np.float64)
+            luminance = 0.299 * fg_f[:,:,0] + 0.587 * fg_f[:,:,1] + 0.114 * fg_f[:,:,2]
+            colorized = np.stack([luminance * tint[0], luminance * tint[1], luminance * tint[2]], axis=2)
+            blended_fg = fg_f * (1.0 - tint_strength) + colorized * tint_strength
+
+        # Apply masked alpha blend onto composite
+        mask_3ch = mask[:, :, np.newaxis]
+        composite = composite * (1.0 - mask_3ch * alpha) + blended_fg * mask_3ch * alpha
+
+    composite = np.clip(composite, 0, 255).astype(np.uint8)
+    composite_bgr = cv2.cvtColor(composite, cv2.COLOR_RGB2BGR)
+
+    frames_str = "_".join(str(f) for f in overlay_frames)
+    output_path = os.path.join(output_dir, f"overlay_{frames_str}.png")
+    cv2.imwrite(output_path, composite_bgr)
+    print(f"Saved overlay: {output_path}")
+
+    renderer.close()
+
+
 if __name__ == "__main__":
   build_env_xml(AGENT, TASK)
 
@@ -190,8 +345,14 @@ if __name__ == "__main__":
   objectSplines, objectSeconds, _ = parseSplines('startingTrajectories/' + AGENT + '/' + TASK + '/object.smexp')
 
 
-  frames = 1000
-  frames = 710
+  if AGENT == "Allegro_right":
+    object = trimesh.load('/Users/hjp/desktop/trajectoryRetargeting/tasks/apple.obj', process=False)
+    hand = 'Allegro'
+    frames = 710
+  else:
+    object = trimesh.load('/Users/hjp/desktop/exports/s1/cubemedium_inspect_1_full_export_objectmesh.obj', process=False)
+    hand = 'MANO'
+    frames = 1000
   
   # Load model with offscreen framebuffer for rendering
   with open('kitchen2.xml', 'r') as f:
@@ -210,18 +371,9 @@ if __name__ == "__main__":
   #   num_vertices = sum(1 for line in f if line.startswith('v '))
   # print("Number of vertices:", num_vertices)
 
-  if AGENT == "Allegro_right":
-    object = trimesh.load('/Users/hjp/desktop/trajectoryRetargeting/tasks/apple.obj', process=False)
-    
-    # Load contacts from .lcexp file
-    hand = 'Allegro'
-    contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp', hand)
-  else:
-    object = trimesh.load('/Users/hjp/desktop/exports/s1/cubemedium_inspect_1_full_export_objectmesh.obj', process=False)
   
-    # Load contacts from .lcexp file
-    contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp')
   
+  contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp', hand)
   contact_start, contact_end = get_contact_frame_range(contacts_lcexp)
 
   if len(contacts_lcexp) != frames:
@@ -238,8 +390,12 @@ if __name__ == "__main__":
 
   object_qpos_spline_data = object_qpos_spline_data[:, :, 1] # (6, frames)
 
-  rotation = [0, 0, 146.441]
+  # rotation = [0, 0, 146.441]
+  # rotation = [0, 0, -101.386]
   rotation = [0, 0, 0]
+  # rotation = [0, 0, -101.386]
+  if AGENT == 'Allegro_right':
+    rotation = [0, 0, 0]
   qpos_spline_data = rotate_keyframe_angles(qpos_spline_data, rotation)
   object_qpos_spline_data = rotate_keyframe_angles(object_qpos_spline_data, rotation)
 
@@ -250,29 +406,45 @@ if __name__ == "__main__":
 
   object_qpos = convert_to_quaternions_object(object_qpos_spline_data)
 
+  if AGENT == 'Allegro_right':
+    hand_shift = np.zeros([qpos.shape[0], 1])
+    object_shift = np.zeros([object_qpos.shape[0], 1])
+    pos_shift = [2.2, -2.1, .08]
+    hand_shift[:3, 0] += pos_shift
+    object_shift[:3, 0] += pos_shift
 
-
+    qpos += hand_shift
+    object_qpos += object_shift
 
   #### LOAD HAND AND OBJECT CONTACTS FROM .lcexp FILE ####
   hand_contacts = {}  # per hand component, each contains a list of contacts per frame
-  hand_components_len = 21
-  hand_component_offset = 2  # starting index of body_id for hand components in mujoco model
 
+  # Look up body IDs by name since the kitchen model has many bodies before the hand.
   if AGENT == 'Allegro_right':
-    # Look up body IDs by name since the kitchen model has many bodies before the hand.
-    allegro_body_names = [
+    hand_body_names = [
         'allegro_palm',
         'allegro_th_base', 'allegro_th_proximal', 'allegro_th_medial', 'allegro_th_distal', 'allegro_th_tip',
         'allegro_ff_base', 'allegro_ff_proximal', 'allegro_ff_medial', 'allegro_ff_distal', 'allegro_ff_tip',
         'allegro_mf_base', 'allegro_mf_proximal', 'allegro_mf_medial', 'allegro_mf_distal', 'allegro_mf_tip',
         'allegro_rf_base', 'allegro_rf_proximal', 'allegro_rf_medial', 'allegro_rf_distal', 'allegro_rf_tip',
     ]
-    hand_component_body_ids = []
-    for name in allegro_body_names:
-        body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
-        if body_id == -1:
-            raise ValueError(f"Body '{name}' not found in model")
-        hand_component_body_ids.append(body_id)
+  else:
+    hand_body_names = [
+        'wrist',
+        'thumb1', 'thumb2', 'thumb3',
+        'ring1', 'ring2', 'ring3',
+        'pinky1', 'pinky2', 'pinky3',
+        'middle1', 'middle2', 'middle3',
+        'index1', 'index2', 'index3',
+    ]
+
+  hand_components_len = len(hand_body_names)
+  hand_component_body_ids = []
+  for name in hand_body_names:
+      body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
+      if body_id == -1:
+          raise ValueError(f"Body '{name}' not found in model")
+      hand_component_body_ids.append(body_id)
 
   for i in range(hand_components_len):
     hand_contacts[i] = [None] * frames
@@ -347,7 +519,6 @@ if __name__ == "__main__":
 
   
   # Render frames if --render flag is passed
-  import sys
   if '--render' in sys.argv:
     render_start = 0
     render_end = frames
@@ -368,20 +539,128 @@ if __name__ == "__main__":
                   contact_start=contact_start, contact_end=contact_end)
     print(f"All images saved to: {render_output}/")
 
+  # Render overlay if --overlay flag is passed: e.g. --overlay 150,250,490
+  if '--overlay' in sys.argv:
+    overlay_output = 'visuals/trajectory_frames'
+    overlay_frames_list = None
+    for idx, arg in enumerate(sys.argv):
+      if arg == '--overlay' and idx + 1 < len(sys.argv):
+        overlay_frames_list = [int(f.strip()) for f in sys.argv[idx + 1].split(',')]
+      if arg == '--render-output' and idx + 1 < len(sys.argv):
+        overlay_output = sys.argv[idx + 1]
+    if overlay_frames_list:
+      render_overlay(m, d, qpos, object_qpos, frames, overlay_frames_list, overlay_output,
+                     contact_start=contact_start, contact_end=contact_end)
+
+  if '--record' in sys.argv:
+    print("\nRecording animation...")
+    video_path = f"initial_trajectories/{TASK}.mp4"
+    os.makedirs("initial_trajectories", exist_ok=True)
+
+    record_start = contact_start if contact_start is not None else 0
+    record_end = (contact_end + 1) if contact_end is not None else frames
+    print(f"  Recording frames {record_start} to {record_end - 1} (of {frames} total)")
+
+    renderer = mujoco.Renderer(m, height=1080, width=1920)
+
+    scene_option = mujoco.MjvOption()
+    scene_option.geomgroup[0] = 0
+    scene_option.geomgroup[1] = 1
+    scene_option.geomgroup[2] = 1
+    scene_option.geomgroup[5] = 1
+    scene_option.frame = mujoco.mjtFrame.mjFRAME_NONE
+    for idx in range(6):
+      scene_option.sitegroup[idx] = 0
+
+    cam = mujoco.MjvCamera()
+    cam.azimuth = 89.7
+    cam.elevation = -24.3
+    cam.distance = 3.376
+    cam.lookat[:] = [2.342, -0.005, 0.410]
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    fps = int(1.0 / m.opt.timestep)
+    video_writer = cv2.VideoWriter(video_path, fourcc, fps, (1920, 1080))
+
+    hand_components = [None] * hand_components_len
+    for j in range(hand_components_len):
+      hand_components[j] = get_mesh_for_body(m, hand_component_body_ids[j])
+
+    contact_len_rec = max(contact_end - contact_start, 1)
+
+    for i in range(record_start, record_end):
+      d.qpos = qpos[:, i]
+      d.mocap_pos = object_qpos[:3, i]
+      d.mocap_quat = object_qpos[3:, i]
+      mujoco.mj_forward(m, d)
+
+      renderer.update_scene(d, camera=cam, scene_option=scene_option)
+      geometry_count = renderer.scene.ngeom
+
+      # for j in range(record_start, i + 1):
+      #   if j >= contact_start and j <= contact_end:
+      #     t = (j - contact_start) / contact_len_rec
+      #     # r, g, b = time_to_rgb(t)
+      #     # rgba = np.array([r, g, b, 1])
+      #     rgba = np.array([0, 1, 0, 1])
+      #   else:
+      #     rgba = np.array([0, 1, 0, 1])
+      #   mujoco.mjv_initGeom(
+      #       renderer.scene.geoms[geometry_count],
+      #       type=mujoco.mjtGeom.mjGEOM_SPHERE,
+      #       size=[0.005, 0, 0],
+      #       pos=object_qpos[:3, j],
+      #       mat=np.eye(3).flatten(),
+      #       rgba=rgba)
+      #   geometry_count += 1
+
+      # local_hand_contacts = {}
+      # for hand_component_id in range(hand_components_len):
+      #   contacts_this_frame = hand_contacts[hand_component_id][i]
+      #   if contacts_this_frame is not None:
+      #     local_hand_contacts[hand_component_id] = []
+      #     for contact in contacts_this_frame:
+      #       face_id, bary_coords, object_contact_idx = contact
+      #       local_pos = get_local_pos(face_id, bary_coords, hand_components[hand_component_id][0], hand_components[hand_component_id][1])
+      #       local_hand_contacts[hand_component_id].append(local_pos)
+      #     local_hand_contacts[hand_component_id] = np.array(local_hand_contacts[hand_component_id])
+
+      # for j in local_hand_contacts:
+      #   for k in range(len(local_hand_contacts[j])):
+      #     local_vertex = local_hand_contacts[j][k]
+      #     global_vertex = local_to_global(local_vertex, hand_component_body_ids[j], d)
+      #     mujoco.mjv_initGeom(
+      #         renderer.scene.geoms[geometry_count],
+      #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+      #         size=[0.001, 0, 0],
+      #         pos=np.array(global_vertex),
+      #         mat=np.eye(3).flatten(),
+      #         rgba=np.array([0, 1, 0, 1]))
+      #     geometry_count += 1
+
+      renderer.scene.ngeom = geometry_count
+
+      frame = renderer.render()
+      frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+      video_writer.write(frame_bgr)
+
+    video_writer.release()
+    renderer.close()
+    print(f"Video saved to: {video_path}")
+    sys.exit(0)
+
   frame_pts = []
   obj_frame_pts = []
   obj_orig_frame_pts = []
   obj_retarget_frame_pts = []
 
 
+
   with mujoco.viewer.launch_passive(m, d) as viewer:
     # compute hand component meshes
     hand_components = [None] * hand_components_len
     for j in range(hand_components_len):
-      if AGENT == 'Allegro_right':
-        hand_components[j] = get_mesh_for_body(m, hand_component_body_ids[j])
-      else:
-        hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
+      hand_components[j] = get_mesh_for_body(m, hand_component_body_ids[j])
     
     # qpos_optimized = qpos.copy()
     # qpos = optimize_trajectory(
@@ -445,14 +724,22 @@ if __name__ == "__main__":
         )
       geometry_count += len(obj_orig_frame_pts)
       
+      contact_len_live = max(contact_end - contact_start, 1)
       for j in range(len(obj_frame_pts)):
+        frame_j = j  # obj_frame_pts is built from frame 0 onwards
+        if frame_j >= contact_start and frame_j <= contact_end:
+            t = (frame_j - contact_start) / contact_len_live
+            r, g, b = time_to_rgb(t)
+            rgba = np.array([r, g, b, 1])
+        else:
+            rgba = np.array([0.5, 0.5, 0.5, 0.3])
         mujoco.mjv_initGeom(
             viewer.user_scn.geoms[j + geometry_count],
             type=mujoco.mjtGeom.mjGEOM_SPHERE,
             size=[0.005, 0, 0],
             pos=np.array(obj_frame_pts[j]),
             mat=np.eye(3).flatten(),
-            rgba=np.array([0, 0 if j % frames / frames < 0.72 else 1, 1, 1])
+            rgba=rgba
         )
       geometry_count += len(obj_frame_pts)
 
@@ -476,10 +763,7 @@ if __name__ == "__main__":
       for j in local_hand_contacts: # iterate over hand components
         for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
           local_vertex = local_hand_contacts[j][k]
-          if AGENT == 'Allegro_right':
-            global_vertex = local_to_global(local_vertex, hand_component_body_ids[j], d)
-          else:
-            global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
+          global_vertex = local_to_global(local_vertex, hand_component_body_ids[j], d)
 
           mujoco.mjv_initGeom(
               viewer.user_scn.geoms[k + geometry_count],
@@ -504,3 +788,17 @@ if __name__ == "__main__":
       time_until_next_step = m.opt.timestep - (time.time() - step_start)
       if time_until_next_step > 0:
         time.sleep(time_until_next_step)
+
+  # Save trajectories to initial_trajectories
+  # trajectory_dir = "initial_trajectories"
+  # os.makedirs(trajectory_dir, exist_ok=True)
+
+  # hand_traj_path = os.path.join(trajectory_dir, f"{TASK}_hand.npy")
+  # object_traj_path = os.path.join(trajectory_dir, f"{TASK}_object.npy")
+
+  # np.save(hand_traj_path, qpos)
+  # np.save(object_traj_path, object_qpos.T)  # (7, frames) -> (frames, 7) to match main.py's expected format
+
+  # print(f"\nTrajectories saved:")
+  # print(f"  Hand: {hand_traj_path}")
+  # print(f"  Object: {object_traj_path}")

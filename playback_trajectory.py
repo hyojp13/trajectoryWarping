@@ -17,7 +17,7 @@ import cv2
 import trimesh
 
 from handContacts import get_mesh_for_body
-from load_contacts import load_contacts_lcexp
+from load_contacts import load_contacts_lcexp, get_contact_frame_range
 from parse_splines import parseSplines
 
 
@@ -169,6 +169,7 @@ if __name__ == "__main__":
 
     # Load saved trajectories
     trajectory_dir = "final_trajectories_0.0035"
+    # trajectory_dir = "initial_trajectories"
     hand_traj_path = os.path.join(trajectory_dir, f"{args.trajectory_name}_hand.npy")
     object_traj_path = os.path.join(trajectory_dir, f"{args.trajectory_name}_object.npy")
 
@@ -213,6 +214,11 @@ if __name__ == "__main__":
 
     # Get original start position (before retargeting)
     start_pos = object_qpos_spline_data[:3, 0].copy()
+
+    # Allegro trajectories have a position shift applied in main.py before waypoint computation
+    if AGENT == 'Allegro_right':
+        start_pos += np.array([2.2, -2.1, 0.08])
+
     newStartPos = start_pos + new_start_pos_shift
 
     # Process waypoints like in main.py
@@ -254,11 +260,21 @@ if __name__ == "__main__":
     hand_components = None
     hand_contacts = None
     object_contacts = None
+    contact_end = None
+
+    hand_type = 'Allegro' if AGENT == 'Allegro_right' else 'MANO'
 
     if os.path.exists(contacts_file):
         try:
+            contacts_lcexp = load_contacts_lcexp(contacts_file, hand_type)
+            contact_start, contact_end = get_contact_frame_range(contacts_lcexp)
+            print(f"  Contact range: frames {contact_start} - {contact_end}")
+        except Exception as e:
+            print(f"  Could not load contact range (error: {e})")
+
+        try:
             from contacts import process_contacts
-            contacts_lcexp = load_contacts_lcexp(contacts_file)
+            contacts_lcexp_viz = load_contacts_lcexp(contacts_file, hand_type)
 
             # Compute hand component meshes
             hand_components_len = 16
@@ -267,7 +283,7 @@ if __name__ == "__main__":
             for j in range(hand_components_len):
                 hand_components[j] = get_mesh_for_body(m, j + hand_component_offset)
 
-            hand_contacts, object_contacts = process_contacts(contacts_lcexp, hand_components_len)
+            hand_contacts, object_contacts = process_contacts(contacts_lcexp_viz, hand_components_len)
             print(f"  Contact visualization: enabled")
         except Exception as e:
             print(f"  Contact visualization: disabled (error: {e})")
@@ -288,15 +304,16 @@ if __name__ == "__main__":
         # Set up visualization options
         scene_option = mujoco.MjvOption()
         scene_option.geomgroup[0] = 0  # Disable group 0
-        scene_option.geomgroup[1] = 0  # Disable group 0
+        scene_option.geomgroup[1] = 1  # Disable group 0
         scene_option.geomgroup[5] = 1  # Enable group 5
 
         # Set up camera
         cam = mujoco.MjvCamera()
-        cam.azimuth = 108.9
-        cam.elevation = -23.4
-        cam.distance = 5.430
-        cam.lookat[:] = [0.983, 0.561, -0.635]
+        cam.azimuth = 170.8
+        cam.elevation = -21.4
+        cam.distance = 3.613
+        cam.lookat[:] = [1.231, -1.307, 0.808]
+
 
         # cam.azimuth = 168.7
         # cam.elevation = -40.5
@@ -307,7 +324,11 @@ if __name__ == "__main__":
         fps = int(1.0 / m.opt.timestep)
         video_writer = cv2.VideoWriter(video_path, fourcc, fps, (1920, 1080))
 
-        for i in range(frames):
+        record_start = contact_start if contact_end is not None else 0
+        record_end = (contact_end + 1) if contact_end is not None else frames
+        print(f"  Recording frames {record_start} to {record_end - 1} (of {frames} total)")
+
+        for i in range(record_start, record_end):
             d.qpos = qpos[:, i]
             d.mocap_pos[0] = retargeted_spline_pos[i, :3]
             d.mocap_quat[0] = retargeted_spline_pos[i, 3:]
@@ -354,25 +375,36 @@ if __name__ == "__main__":
                             rgba=[0.5, 0.5, 0.5, 0.3])
                         geometry_count += 1
 
-            # Object contacts
-            if object_contacts is not None and isinstance(object_contacts[i], np.ndarray):
-                # Convert object rotation for contacts
-                quat_scipy = np.array([d.mocap_quat[0, 1], d.mocap_quat[0, 2], d.mocap_quat[0, 3], d.mocap_quat[0, 0]])
-                rotation = R.from_quat(quat_scipy)
-                rotation_matrix = rotation.as_matrix()
+            # Object path
+            # for j in range(record_start, i + 1):
+            #     mujoco.mjv_initGeom(
+            #         renderer.scene.geoms[geometry_count],
+            #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+            #         size=[0.005, 0, 0],
+            #         pos=retargeted_spline_pos[j, :3],
+            #         mat=np.eye(3).flatten(),
+            #         rgba=np.array([0, 1, 0, 1]))
+            #     geometry_count += 1
 
-                for j in range(len(object_contacts[i])):
-                    local_vertex = object_mesh.vertices[object_contacts[i][j]]
-                    world_vertex = (rotation_matrix @ local_vertex + d.mocap_pos[0])
+            # # Object contacts
+            # if object_contacts is not None and isinstance(object_contacts[i], np.ndarray):
+            #     # Convert object rotation for contacts
+            #     quat_scipy = np.array([d.mocap_quat[0, 1], d.mocap_quat[0, 2], d.mocap_quat[0, 3], d.mocap_quat[0, 0]])
+            #     rotation = R.from_quat(quat_scipy)
+            #     rotation_matrix = rotation.as_matrix()
 
-                    mujoco.mjv_initGeom(
-                        renderer.scene.geoms[geometry_count],
-                        type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                        size=[0.001, 0, 0],
-                        pos=np.array(world_vertex),
-                        mat=np.eye(3).flatten(),
-                        rgba=np.array([1, 0, 0, 1]))
-                    geometry_count += 1
+            #     for j in range(len(object_contacts[i])):
+            #         local_vertex = object_mesh.vertices[object_contacts[i][j]]
+            #         world_vertex = (rotation_matrix @ local_vertex + d.mocap_pos[0])
+
+            #         mujoco.mjv_initGeom(
+            #             renderer.scene.geoms[geometry_count],
+            #             type=mujoco.mjtGeom.mjGEOM_SPHERE,
+            #             size=[0.001, 0, 0],
+            #             pos=np.array(world_vertex),
+            #             mat=np.eye(3).flatten(),
+            #             rgba=np.array([1, 0, 0, 1]))
+            #         geometry_count += 1
 
             renderer.scene.ngeom = geometry_count
 
@@ -444,6 +476,10 @@ if __name__ == "__main__":
                             geometry_count += 1
 
                 viewer.user_scn.ngeom = geometry_count
+
+                print(f"Camera: azimuth={viewer.cam.azimuth:.1f}, elevation={viewer.cam.elevation:.1f}, "
+                      f"distance={viewer.cam.distance:.3f}, lookat=[{viewer.cam.lookat[0]:.3f}, {viewer.cam.lookat[1]:.3f}, {viewer.cam.lookat[2]:.3f}]")
+
                 viewer.sync()
                 i += 1
 

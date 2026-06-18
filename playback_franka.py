@@ -206,10 +206,10 @@ def render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, outp
 
     # Set up camera
     cam = mujoco.MjvCamera()
-    cam.azimuth = -178.5
-    cam.elevation = -7.3
-    cam.distance = 3.982
-    cam.lookat[:] = [0.566, -3.827, 1.033]
+    cam.azimuth = 163.4
+    cam.elevation = -16.9
+    cam.distance = 6.853
+    cam.lookat[:] = [-1.451, -2.681, -0.052]
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -228,16 +228,16 @@ def render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, outp
 
         geometry_count = renderer.scene.ngeom
 
-        # Object path (green spheres up to current frame)
-        for j in range(frame_idx + 1):
-            mujoco.mjv_initGeom(
-                renderer.scene.geoms[geometry_count + j],
-                type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                size=[0.005, 0, 0],
-                pos=object_qpos[:3, j],
-                mat=np.eye(3).flatten(),
-                rgba=np.array([0, 1, 0, 1]))
-        geometry_count += frame_idx + 1
+        # # Object path (green spheres up to current frame)
+        # for j in range(frame_idx + 1):
+        #     mujoco.mjv_initGeom(
+        #         renderer.scene.geoms[geometry_count + j],
+        #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+        #         size=[0.005, 0, 0],
+        #         pos=object_qpos[:3, j],
+        #         mat=np.eye(3).flatten(),
+        #         rgba=np.array([0, 1, 0, 1]))
+        # geometry_count += frame_idx + 1
 
         # End effector position (larger green sphere)
         ee_body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "panda_hand")
@@ -264,14 +264,21 @@ def render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, outp
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Playback Franka trajectory from roboverse pickle file')
-    parser.add_argument('pkl_path', type=str, help='Path to pickle file with trajectory data')
+    parser = argparse.ArgumentParser(description='Playback Franka trajectory')
+    parser.add_argument('pkl_path', type=str, nargs='?', default=None,
+                       help='Path to pickle file with trajectory data')
+    parser.add_argument('--hand-npy', type=str, default=None,
+                       help='Path to hand trajectory .npy file (shape: n_dofs x n_frames)')
+    parser.add_argument('--object-npy', type=str, default=None,
+                       help='Path to object trajectory .npy file (shape: 7 x n_frames)')
     parser.add_argument('--object-mesh', type=str, default='meshes/box.obj',
                        help='Path to object mesh file (.obj) (default: meshes/box.obj)')
     parser.add_argument('--speed', type=float, default=1.0,
                        help='Playback speed multiplier (default: 1.0)')
     parser.add_argument('--no-kitchen', action='store_true',
                        help='Disable kitchen scene (show only robot)')
+    parser.add_argument('--record', action='store_true',
+                       help='Record video instead of interactive playback')
     parser.add_argument('--render', action='store_true',
                        help='Render frames to images instead of interactive playback')
     parser.add_argument('--render-output', type=str, default='visuals/franka_frames',
@@ -284,9 +291,22 @@ if __name__ == "__main__":
                        help='Frame step for rendering (default: 10)')
     args = parser.parse_args()
 
-    # Load trajectory
-    print(f"Loading trajectory from: {args.pkl_path}")
-    hand_qpos, object_qpos, n_frames = load_franka_trajectory(args.pkl_path)
+    # Load trajectory from either npy files or pickle
+    if args.hand_npy and args.object_npy:
+        print(f"Loading trajectories from .npy files:")
+        print(f"  Hand:   {args.hand_npy}")
+        print(f"  Object: {args.object_npy}")
+        hand_qpos = np.load(args.hand_npy)
+        object_qpos = np.load(args.object_npy)
+        n_frames = hand_qpos.shape[1]
+        print(f"  Frames: {n_frames}")
+        print(f"  Hand shape: {hand_qpos.shape}")
+        print(f"  Object shape: {object_qpos.shape}")
+    elif args.pkl_path:
+        print(f"Loading trajectory from: {args.pkl_path}")
+        hand_qpos, object_qpos, n_frames = load_franka_trajectory(args.pkl_path)
+    else:
+        parser.error("Provide either a pkl_path or both --hand-npy and --object-npy")
 
     # Create object.xml with the correct mesh (similar to main.py)
     import os
@@ -357,6 +377,72 @@ if __name__ == "__main__":
         print(f"\nRendering {len(frames_to_render)} frames to {args.render_output}/")
         render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, args.render_output)
         print(f"\nAll images saved to: {args.render_output}/")
+
+    if args.record:
+        print("\nRecording animation...")
+        video_dir = "final_trajectories"
+        os.makedirs(video_dir, exist_ok=True)
+        if args.hand_npy:
+            traj_name = os.path.splitext(os.path.basename(args.hand_npy))[0].replace('_hand', '')
+        else:
+            traj_name = os.path.splitext(os.path.basename(args.pkl_path))[0]
+        video_path = os.path.join(video_dir, f"{traj_name}.mp4")
+
+        renderer = mujoco.Renderer(m, height=1080, width=1920)
+
+        scene_option = mujoco.MjvOption()
+        scene_option.geomgroup[0] = 0
+        scene_option.geomgroup[1] = 1
+        scene_option.geomgroup[2] = 1
+        scene_option.geomgroup[5] = 1
+        scene_option.frame = mujoco.mjtFrame.mjFRAME_NONE
+        for idx in range(6):
+            scene_option.sitegroup[idx] = 0
+
+        cam = mujoco.MjvCamera()
+        cam.azimuth = 163.4
+        cam.elevation = -16.9
+        cam.distance = 6.853
+        cam.lookat[:] = [-1.451, -2.681, -0.052]
+
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = int(1.0 / m.opt.timestep)
+        video_writer = cv2.VideoWriter(video_path, fourcc, fps, (1920, 1080))
+
+        print(f"  Recording {n_frames} frames")
+
+        for i in range(n_frames):
+            d.qpos[:] = hand_qpos[:, i]
+            if m.nmocap > 0:
+                d.mocap_pos[0] = object_qpos[:3, i]
+                d.mocap_quat[0] = object_qpos[3:7, i]
+            mujoco.mj_forward(m, d)
+
+            renderer.update_scene(d, camera=cam, scene_option=scene_option)
+            geometry_count = renderer.scene.ngeom
+
+            # Object path (green spheres up to current frame)
+            # for j in range(i + 1):
+            #     mujoco.mjv_initGeom(
+            #         renderer.scene.geoms[geometry_count],
+            #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+            #         size=[0.005, 0, 0],
+            #         pos=object_qpos[:3, j],
+            #         mat=np.eye(3).flatten(),
+            #         rgba=np.array([0, 1, 0, 1]))
+            #     geometry_count += 1
+
+            renderer.scene.ngeom = geometry_count
+
+            frame = renderer.render()
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            video_writer.write(frame_bgr)
+
+        video_writer.release()
+        renderer.close()
+        print(f"Video saved to: {video_path}")
+        import sys
+        sys.exit(0)
 
     print("\nStarting playback... (close viewer to exit)")
 

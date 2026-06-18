@@ -173,6 +173,11 @@ if __name__ == "__main__":
   </mujoco>
   """
 
+  if AGENT == 'Allegro_right':
+    hand = 'Allegro'
+  else:
+    hand = 'MANO'
+
   with open('tasks/object.xml', 'w') as f:
     f.write(object_xml_content)
 
@@ -226,7 +231,7 @@ if __name__ == "__main__":
   object = trimesh.load(object_mesh_file, process=False)
 
   # Load contacts from .lcexp file
-  contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp')
+  contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp', hand)
   startIdx, endIdx = get_contact_frame_range(contacts_lcexp)
 
   frames = len(contacts_lcexp)
@@ -234,9 +239,34 @@ if __name__ == "__main__":
   d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
 
+  # Look up body IDs by name since the kitchen model has many bodies before the hand.
+  if AGENT == 'Allegro_right':
+    hand_body_names = [
+        'allegro_palm',
+        'allegro_th_base', 'allegro_th_proximal', 'allegro_th_medial', 'allegro_th_distal', 'allegro_th_tip',
+        'allegro_ff_base', 'allegro_ff_proximal', 'allegro_ff_medial', 'allegro_ff_distal', 'allegro_ff_tip',
+        'allegro_mf_base', 'allegro_mf_proximal', 'allegro_mf_medial', 'allegro_mf_distal', 'allegro_mf_tip',
+        'allegro_rf_base', 'allegro_rf_proximal', 'allegro_rf_medial', 'allegro_rf_distal', 'allegro_rf_tip',
+    ]
+  else:
+    hand_body_names = [
+        'wrist',
+        'thumb1', 'thumb2', 'thumb3',
+        'ring1', 'ring2', 'ring3',
+        'pinky1', 'pinky2', 'pinky3',
+        'middle1', 'middle2', 'middle3',
+        'index1', 'index2', 'index3',
+    ]
+
+  hand_components_len = len(hand_body_names)
+  hand_component_body_ids = []
+  for name in hand_body_names:
+      body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
+      if body_id == -1:
+          raise ValueError(f"Body '{name}' not found in model")
+      hand_component_body_ids.append(body_id)
+
   # load hand and object contacts from contacts_lcexp
-  hand_components_len = 16
-  hand_component_offset = 2  # starting index of body_id for hand components in mujoco model
   hand_contacts, object_contacts = process_contacts(contacts_lcexp, hand_components_len)
 
   # correct barrier axes (issue due to using repulsive curves previously)
@@ -366,7 +396,7 @@ if __name__ == "__main__":
   # Compute hand component meshes (needed for metrics calculation and visualization)
   hand_components = [None] * hand_components_len
   for j in range(hand_components_len):
-    hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
+    hand_components[j] = get_mesh_for_body(m, hand_component_body_ids[j])
 
   # Input-frame-iterated interpolation approach:
   # 1. Iterate over INPUT contact frames
@@ -547,7 +577,7 @@ if __name__ == "__main__":
   from optimize_contacts import compute_contact_metrics
   contact_metrics = compute_contact_metrics(
     qpos, retargeted_spline_pos, m, d, hand_contacts, object_contacts,
-    hand_components, hand_component_offset, object, startIdx, endIdx
+    hand_components, hand_component_body_ids, object, startIdx, endIdx
   )
   print(f"  Contact frames: {startIdx} to {endIdx} ({endIdx - startIdx + 1} frames)")
   print(f"  Overall average distance: {np.mean(contact_metrics['average_distances']):.6f}")

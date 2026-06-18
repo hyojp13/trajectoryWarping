@@ -1,11 +1,37 @@
+# --- Editor / OS junk ---
+.DS_Store
+.vscode/
+
+# --- Python / build ---
+__pycache__/
+build/
+
+# --- MuJoCo runtime junk ---
 env.xml
 MUJOCO_LOG.txt
 
-__pycache__/
-.DS_Store
-
-.vscode/
-
-build/
-
+# --- Generated scene / barrier meshes (rewritten on each run) ---
 scene/
+
+# --- Run outputs: rendered videos and frames ---
+visuals/
+*.mp4
+
+# --- Run outputs: per-task retargeting results ---
+final_trajectories/
+final_trajectories_*/
+initial_trajectories/
+
+# --- Aggregated metrics / one-off debug artifacts ---
+results_new_*.json
+results_*.json
+qpos_optimized.npy
+smoothing_visualization_*.png
+timewarp_discrepancy.png
+startEndGraph.png
+.obj_dense.obj
+.objtemp.obj
+
+# Machine-specific symlink (real meshes are under agents/Allegro_right/geom_assets/)
+/meshes/geom_assets
+

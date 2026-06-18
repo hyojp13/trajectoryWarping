@@ -74,7 +74,7 @@ def main():
     # Load contact range and recreate timewarp to find waypoint positions
     # ============================================================
 
-    contacts_lcexp = load_contacts_lcexp(f'startingTrajectories/{AGENT}/{TASK}/contacts.lcexp')
+    contacts_lcexp = load_contacts_lcexp(f'startingTrajectories/{AGENT}/{TASK}/contacts.lcexp', 'MANO')
     startIdx, endIdx = get_contact_frame_range(contacts_lcexp)
 
     print(f"Contact range: {startIdx} to {endIdx}")
@@ -200,16 +200,18 @@ def main():
         ax.axvspan(startIdx, endIdx, alpha=0.1, color='yellow')
         for tw_out_idx in timewarp_output_indices[::2]:
             ax.axvline(x=tw_out_idx, color='purple', linestyle='-', alpha=0.15, linewidth=0.5)
-        ax.set_xlabel('Frame index', fontsize=10)
-        ax.set_ylabel(f'{label} position (m)', fontsize=10)
-        ax.set_title(f'{label} Position: Contact vs Naive', fontsize=12)
-        ax.legend(loc='best', fontsize=8)
+        ax.set_xlabel('Frame index', fontsize=12)
+        ax.set_ylabel(f'{label} position (m)', fontsize=12)
+        ax.set_title(f'{label} Position: Contact vs Naive', fontsize=14)
+        ax.legend(loc='best', fontsize=11)
         ax.grid(True, alpha=0.3)
         ax.set_xticks(np.arange(0, frames + 1, 50))
 
         plt.tight_layout()
         filepath = os.path.join(output_dir, f'position_{label.lower()}.png')
         plt.savefig(filepath, dpi=150, bbox_inches='tight')
+        if label == 'Z':
+            plt.show()
         plt.close(fig)
         print(f"Saved: {filepath}")
 
@@ -238,9 +240,9 @@ def main():
         # ax.scatter(orig_x, qpos_copy[3 + i, orig_frames],
         #            s=20, c='cyan', zorder=4, marker='+', linewidths=1.2,
         #            label=f'Original hand {label}')
-        ax.set_ylabel(f'{label}', fontsize=10)
-        ax.set_title(f'Wrist Rotation {label}: Contact vs Naive', fontsize=12)
-        ax.legend(loc='best', fontsize=8)
+        ax.set_ylabel(f'{label}', fontsize=13)
+        ax.set_title(f'Wrist Rotation {label}: Contact vs Naive', fontsize=15)
+        ax.legend(loc='best', fontsize=11)
         ax.grid(True, alpha=0.3)
 
         # --- Bottom: original demo trajectory ---
@@ -249,10 +251,10 @@ def main():
         ax_orig.plot(frame_indices, qpos_copy[3 + i, :], 'b-', linewidth=2,
                      label=f'Hand {label} (original)', alpha=0.8)
         ax_orig.axvspan(startIdx, endIdx, alpha=0.1, color='yellow', label='Contact region')
-        ax_orig.set_xlabel('Frame index', fontsize=10)
-        ax_orig.set_ylabel(f'{label}', fontsize=10)
-        ax_orig.set_title(f'Wrist Rotation {label}: Original Demo', fontsize=12)
-        ax_orig.legend(loc='best', fontsize=8)
+        ax_orig.set_xlabel('Frame index', fontsize=13)
+        ax_orig.set_ylabel(f'{label}', fontsize=13)
+        ax_orig.set_title(f'Wrist Rotation {label}: Original Demo', fontsize=15)
+        ax_orig.legend(loc='best', fontsize=11)
         ax_orig.grid(True, alpha=0.3)
         ax_orig.set_xticks(np.arange(0, frames + 1, 50))
 
@@ -269,7 +271,7 @@ def main():
     for fj in range(15):
         base_dof = fj * 4 + 7  # first DOF (w) for this finger joint
         fig, axes = plt.subplots(2, 4, figsize=(24, 7), sharey=False)
-        fig.suptitle(f'Finger Joint {fj+1} Quaternion', fontsize=11)
+        fig.suptitle(f'Finger Joint {fj+1} Quaternion', fontsize=14)
 
         for comp_idx, comp_label in enumerate(quat_labels):
             dof = base_dof + comp_idx
@@ -290,23 +292,23 @@ def main():
             # ax.scatter(orig_x, qpos_copy[dof, orig_frames],
             #            s=15, c='cyan', zorder=4, marker='+', linewidths=1.0,
             #            label='Original hand')
-            ax.set_ylabel(comp_label, fontsize=8)
-            ax.set_title(f'{comp_label} (output)', fontsize=9)
-            ax.legend(loc='best', fontsize=6)
+            ax.set_ylabel(comp_label, fontsize=11)
+            ax.set_title(f'{comp_label} (output)', fontsize=12)
+            ax.legend(loc='best', fontsize=9)
             ax.grid(True, alpha=0.3)
             ax.set_xticks(np.arange(0, frames + 1, 100))
-            ax.tick_params(labelsize=7)
+            ax.tick_params(labelsize=10)
 
             # --- Bottom row: original demo ---
             ax_orig = axes[1, comp_idx]
             ax_orig.plot(frame_indices, qpos_copy[dof, :], 'b-', linewidth=1.5, alpha=0.8)
             ax_orig.axvspan(startIdx, endIdx, alpha=0.1, color='yellow')
-            ax_orig.set_xlabel('Frame', fontsize=8)
-            ax_orig.set_ylabel(comp_label, fontsize=8)
-            ax_orig.set_title(f'{comp_label} (original)', fontsize=9)
+            ax_orig.set_xlabel('Frame', fontsize=11)
+            ax_orig.set_ylabel(comp_label, fontsize=11)
+            ax_orig.set_title(f'{comp_label} (original)', fontsize=12)
             ax_orig.grid(True, alpha=0.3)
             ax_orig.set_xticks(np.arange(0, frames + 1, 100))
-            ax_orig.tick_params(labelsize=7)
+            ax_orig.tick_params(labelsize=10)
 
         plt.tight_layout()
         filepath = os.path.join(output_dir, f'finger_joint_{fj+1:02d}.png')
@@ -333,10 +335,10 @@ def main():
             ax.axvline(x=wp_idx, color='green', linestyle=':', alpha=0.7)
             ax.scatter([wp_idx], [contact_timewarp[wp_idx]], s=80, c='green', zorder=5, marker='o')
 
-    ax.set_xlabel('Original frame index', fontsize=10)
-    ax.set_ylabel('Timewarp parameter (codomain)', fontsize=10)
-    ax.set_title('Timewarp Function: Original Frame → Output Parameter', fontsize=12)
-    ax.legend(loc='best', fontsize=8)
+    ax.set_xlabel('Original frame index', fontsize=13)
+    ax.set_ylabel('Timewarp parameter (codomain)', fontsize=13)
+    ax.set_title('Timewarp Function: Original Frame → Output Parameter', fontsize=15)
+    ax.legend(loc='best', fontsize=11)
     ax.grid(True, alpha=0.3)
     ax.set_xticks(np.arange(startIdx, endIdx + 1, 50))
 

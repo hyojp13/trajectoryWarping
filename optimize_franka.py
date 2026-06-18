@@ -308,15 +308,15 @@ def render_frames(m, d, hand_qpos, object_qpos, n_frames, frames_to_render, outp
         geometry_count = renderer.scene.ngeom
 
         # Object path (green spheres up to current frame)
-        for j in range(frame_idx + 1):
-            mujoco.mjv_initGeom(
-                renderer.scene.geoms[geometry_count + j],
-                type=mujoco.mjtGeom.mjGEOM_SPHERE,
-                size=[0.005, 0, 0],
-                pos=object_qpos[:3, j],
-                mat=np.eye(3).flatten(),
-                rgba=np.array([0, 1, 0, 1]))
-        geometry_count += frame_idx + 1
+        # for j in range(frame_idx + 1):
+        #     mujoco.mjv_initGeom(
+        #         renderer.scene.geoms[geometry_count + j],
+        #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+        #         size=[0.005, 0, 0],
+        #         pos=object_qpos[:3, j],
+        #         mat=np.eye(3).flatten(),
+        #         rgba=np.array([0, 1, 0, 1]))
+        # geometry_count += frame_idx + 1
 
         # Object contacts (red spheres)
         if object_contacts is not None and object_mesh is not None and frame_idx < len(object_contacts):
@@ -414,6 +414,8 @@ if __name__ == "__main__":
     parser.add_argument('--n-iter', type=int, default=100, help='Number of iterations (default: 100)')
     parser.add_argument('--device', type=str, default='cpu',
                        help='Device for optimization: cpu, cuda, or mps (default: cpu)')
+    parser.add_argument('--record', action='store_true',
+                       help='Record video after optimization')
     parser.add_argument('--render', action='store_true',
                        help='Render frames to images after optimization')
     parser.add_argument('--render-output', type=str, default='visuals/franka_optimized',
@@ -493,12 +495,13 @@ if __name__ == "__main__":
 
     # Extract kinematic tree
     print(f"\nExtracting kinematic tree...")
-    kinematic_tree = extract_kinematic_tree(m, hand_component_offset, hand_components_len)
+    hand_component_body_ids = list(range(hand_component_offset, hand_component_offset + hand_components_len))
+    kinematic_tree, root_body_id = extract_kinematic_tree(m, hand_component_body_ids)
 
     # Precompute kinematic tree tensors
     print(f"Precomputing kinematic tree tensors on device: {args.device}")
     kinematic_tree_torch = precompute_kinematic_tree_tensors(
-        kinematic_tree, hand_component_offset, hand_components_len, args.device
+        kinematic_tree, hand_component_body_ids, args.device
     )
 
     ##### Object Retargeting #####
@@ -753,7 +756,7 @@ if __name__ == "__main__":
             initial_qpos,
             object_qpos_frame,
             m, d, hand_contacts, object_contacts,
-            hand_components, hand_component_offset, object_mesh, frame,
+            hand_components, hand_component_body_ids, object_mesh, frame,
             kinematic_tree, lr=args.lr, n_iter=args.n_iter,
             optimize_wrist=False,  # Keep robot base fixed, only optimize joints
             optimize_joints=True,
@@ -894,6 +897,81 @@ if __name__ == "__main__":
                       hand_component_offset=hand_component_offset_vis,
                       barriers=barriers, waypts=waypts)
         print(f"\nAll images saved to: {args.render_output}/")
+
+    if args.record:
+        import sys
+        print("\nRecording animation...")
+        video_dir = "final_trajectories"
+        os.makedirs(video_dir, exist_ok=True)
+        traj_name = os.path.splitext(os.path.basename(args.pkl_path))[0]
+        video_path = os.path.join(video_dir, f"{traj_name}_optimized.mp4")
+
+        renderer = mujoco.Renderer(m_vis, height=1080, width=1920)
+
+        scene_option = mujoco.MjvOption()
+        scene_option.geomgroup[0] = 0
+        scene_option.geomgroup[1] = 1
+        scene_option.geomgroup[2] = 1
+        scene_option.geomgroup[5] = 1
+        scene_option.frame = mujoco.mjtFrame.mjFRAME_NONE
+        for idx in range(6):
+            scene_option.sitegroup[idx] = 0
+
+        cam = mujoco.MjvCamera()
+        cam.azimuth = -178.5
+        cam.elevation = -7.3
+        cam.distance = 3.982
+        cam.lookat[:] = [0.566, -3.827, 1.033]
+
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fps = int(1.0 / dt)
+        video_writer = cv2.VideoWriter(video_path, fourcc, fps, (1920, 1080))
+
+        print(f"  Recording {n_frames} frames")
+
+        for i in range(n_frames):
+            d_vis.qpos[:16] = hand_qpos[:, i]
+            if m_vis.nmocap > 0:
+                d_vis.mocap_pos[0] = object_qpos[:3, i]
+                d_vis.mocap_quat[0] = object_qpos[3:7, i]
+            mujoco.mj_forward(m_vis, d_vis)
+
+            renderer.update_scene(d_vis, camera=cam, scene_option=scene_option)
+            geometry_count = renderer.scene.ngeom
+
+            # Object path
+            # for j in range(i + 1):
+            #     mujoco.mjv_initGeom(
+            #         renderer.scene.geoms[geometry_count],
+            #         type=mujoco.mjtGeom.mjGEOM_SPHERE,
+            #         size=[0.005, 0, 0],
+            #         pos=object_qpos[:3, j],
+            #         mat=np.eye(3).flatten(),
+            #         rgba=np.array([0, 1, 0, 1]))
+            #     geometry_count += 1
+
+            # Waypoints
+            if waypts is not None:
+                for wp in waypts:
+                    mujoco.mjv_initGeom(
+                        renderer.scene.geoms[geometry_count],
+                        type=mujoco.mjtGeom.mjGEOM_SPHERE,
+                        size=[0.01, 0, 0],
+                        pos=wp[0],
+                        mat=np.eye(3).flatten(),
+                        rgba=np.array([1, 0, 0, 1]))
+                    geometry_count += 1
+
+            renderer.scene.ngeom = geometry_count
+
+            frame = renderer.render()
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            video_writer.write(frame_bgr)
+
+        video_writer.release()
+        renderer.close()
+        print(f"Video saved to: {video_path}")
+        sys.exit(0)
 
     print("\nLaunching viewer...")
 

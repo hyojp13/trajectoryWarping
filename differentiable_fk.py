@@ -23,10 +23,16 @@ def quaternion_to_rotation_matrix(q):
     return R
 
 
-def extract_kinematic_tree(model, hand_component_offset, hand_components_len):
+def extract_kinematic_tree(model, hand_component_body_ids):
     """
     Extract kinematic tree structure from MuJoCo model.
-    
+    Also includes ancestor bodies that have joints (e.g., allegro_wrist which has
+    root joints but no mesh geoms and is not in hand_component_body_ids).
+
+    Args:
+        model: MuJoCo model
+        hand_component_body_ids: list of body IDs for hand components
+
     Returns:
         body_info: dict mapping body_id -> {
             'parent_id': parent body id,
@@ -38,16 +44,26 @@ def extract_kinematic_tree(model, hand_component_offset, hand_components_len):
             },
             'body_pos': local position relative to parent,
             'body_quat': local orientation relative to parent (w, x, y, z)
-        }
+        },
+        root_body_id: the topmost body in the kinematic tree (may be an ancestor
+                       not in hand_component_body_ids if it has joints)
     """
     body_info = {}
-    
-    # Get body IDs for hand components (including root)
-    # Root body is typically hand_component_offset
-    root_body_id = hand_component_offset
-    hand_body_ids = list(range(hand_component_offset, hand_component_offset + hand_components_len))
-    
-    for body_id in hand_body_ids:
+
+    # Include ancestor bodies that have joints (walk up parent chain from first component)
+    bodies_to_process = list(hand_component_body_ids)
+    for body_id in hand_component_body_ids:
+        parent_id = model.body_parentid[body_id]
+        while parent_id != 0 and parent_id not in bodies_to_process:
+            # Check if this ancestor has joints
+            has_joints = any(model.jnt_bodyid[j] == parent_id for j in range(model.njnt))
+            if has_joints:
+                bodies_to_process.append(parent_id)
+            else:
+                break
+            parent_id = model.body_parentid[parent_id]
+
+    for body_id in bodies_to_process:
         parent_id = model.body_parentid[body_id]
         
         # Get body position and orientation relative to parent
@@ -98,11 +114,19 @@ def extract_kinematic_tree(model, hand_component_offset, hand_components_len):
             'body_pos': body_pos,
             'body_quat': body_quat
         }
-    
-    return body_info
+
+    # Determine root body: the topmost body in the tree (parent not in body_info)
+    root_body_id = hand_component_body_ids[0]
+    for bid in bodies_to_process:
+        parent = model.body_parentid[bid]
+        if parent not in body_info:
+            root_body_id = bid
+            break
+
+    return body_info, root_body_id
 
 
-def precompute_kinematic_tree_tensors(kinematic_tree, hand_component_offset, hand_components_len, device):
+def precompute_kinematic_tree_tensors(kinematic_tree, hand_component_body_ids, device):
     """
     Pre-convert kinematic tree numpy arrays to torch tensors on the target device.
     This avoids repeated conversions during optimization.
@@ -112,9 +136,7 @@ def precompute_kinematic_tree_tensors(kinematic_tree, hand_component_offset, han
     """
     kinematic_tree_torch = {}
 
-    for body_id in range(hand_component_offset, hand_component_offset + hand_components_len):
-        if body_id not in kinematic_tree:
-            continue
+    for body_id in kinematic_tree:
 
         info = kinematic_tree[body_id].copy()
 
@@ -136,7 +158,7 @@ def precompute_kinematic_tree_tensors(kinematic_tree, hand_component_offset, han
     return kinematic_tree_torch
 
 
-def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_offset, hand_components_len, root_body_id):
+def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_body_ids, root_body_id):
     """
     Compute forward kinematics in PyTorch for all hand bodies.
     Optimized version with pre-allocated tensors and reduced dynamic allocations.
@@ -144,8 +166,7 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
     Args:
         qpos_torch: (nq,) torch tensor of joint positions
         kinematic_tree: dict from extract_kinematic_tree (with pre-converted torch tensors)
-        hand_component_offset: starting body_id for hand components
-        hand_components_len: number of hand components
+        hand_component_body_ids: list of body IDs for hand components
         root_body_id: body ID of root (wrist)
 
     Returns:
@@ -155,7 +176,6 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
         }
     """
     transforms = {}
-    hand_body_ids = list(range(hand_component_offset, hand_component_offset + hand_components_len))
     device = qpos_torch.device
     dtype = qpos_torch.dtype
 
@@ -231,7 +251,7 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
             transforms[body_id] = {'pos': pos, 'rot': rot}
             return transforms[body_id]
 
-        if body_id < hand_component_offset:
+        if body_id not in kinematic_tree:
             # Body outside hand - world transform
             transforms[body_id] = {'pos': zeros_3.clone(), 'rot': eye_3.clone()}
             return transforms[body_id]
@@ -241,10 +261,10 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
         parent_id = info['parent_id']
 
         # Recursively get parent transform
-        if parent_id not in transforms and parent_id >= hand_component_offset:
+        if parent_id not in transforms and parent_id in kinematic_tree:
             get_transforms_recursive(parent_id)
 
-        if parent_id >= hand_component_offset and parent_id in transforms:
+        if parent_id in kinematic_tree and parent_id in transforms:
             parent_transform = transforms[parent_id]
             parent_pos = parent_transform['pos']
             parent_rot = parent_transform['rot']
@@ -315,13 +335,6 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
         # For positions: p_world = parent_rot @ (body_pos_local + body_rot_local @ joint_pos) + parent_pos
         # For rotations: R_world = parent_rot @ body_rot_local @ joint_rot
 
-        # DEBUG: Print for link0
-        if body_id == hand_component_offset and False:  # Disabled by default
-            print(f'DEBUG link0 (body {body_id}):')
-            print(f'  body_pos_local: {body_pos_local}')
-            print(f'  joint_pos: {joint_pos}')
-            print(f'  parent_pos: {parent_pos}')
-
         world_pos = parent_rot @ (body_pos_local + body_rot_local @ joint_pos) + parent_pos
         world_rot = parent_rot @ body_rot_local @ joint_rot
 
@@ -329,7 +342,7 @@ def compute_forward_kinematics_torch(qpos_torch, kinematic_tree, hand_component_
         return transforms[body_id]
 
     # Process all bodies
-    for body_id in hand_body_ids:
+    for body_id in hand_component_body_ids:
         get_transforms_recursive(body_id)
 
     return transforms
@@ -387,8 +400,8 @@ def precompute_local_hand_contacts(hand_contacts, hand_components, hand_componen
 
 
 def compute_global_hand_contacts_torch(qpos_torch, kinematic_tree, hand_contacts,
-                                       hand_components, hand_component_offset,
-                                       hand_components_len, root_body_id, frame_idx,
+                                       hand_components, hand_component_body_ids,
+                                       root_body_id, frame_idx,
                                        local_contacts_cache=None):
     """
     Compute global hand contact positions using differentiable forward kinematics.
@@ -399,8 +412,7 @@ def compute_global_hand_contacts_torch(qpos_torch, kinematic_tree, hand_contacts
         kinematic_tree: dict from extract_kinematic_tree (with pre-converted torch tensors)
         hand_contacts: dict of hand contacts
         hand_components: list of (faces, verts) tuples
-        hand_component_offset: starting body_id
-        hand_components_len: number of components
+        hand_component_body_ids: list of body IDs for hand components
         root_body_id: root body ID
         frame_idx: frame index
         local_contacts_cache: optional pre-computed local contact positions
@@ -410,16 +422,16 @@ def compute_global_hand_contacts_torch(qpos_torch, kinematic_tree, hand_contacts
     """
     # Compute forward kinematics
     transforms = compute_forward_kinematics_torch(
-        qpos_torch, kinematic_tree, hand_component_offset,
-        hand_components_len, root_body_id
+        qpos_torch, kinematic_tree, hand_component_body_ids, root_body_id
     )
 
     global_hand_contacts = {}
+    hand_components_len = len(hand_component_body_ids)
 
     # Use cached local positions if available
     if local_contacts_cache is not None:
         for hand_component_id in local_contacts_cache:
-            body_id = hand_component_id + hand_component_offset
+            body_id = hand_component_body_ids[hand_component_id]
 
             if body_id not in transforms:
                 continue
@@ -442,7 +454,7 @@ def compute_global_hand_contacts_torch(qpos_torch, kinematic_tree, hand_contacts
             if contacts_this_frame is None:
                 continue
 
-            body_id = hand_component_id + hand_component_offset
+            body_id = hand_component_body_ids[hand_component_id]
 
             if body_id not in transforms:
                 continue

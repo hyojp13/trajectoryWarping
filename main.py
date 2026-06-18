@@ -151,6 +151,13 @@ if __name__ == "__main__":
   barrier_weight = config['barrier_weight']
   barrier_margin = config['barrier_margin']
   barrier_n = config['barrier_n']
+  loss_threshold = config.get('loss_threshold', 0.0035)
+
+  if AGENT == 'MANO_right' or AGENT == 'trajectories':
+    hand = 'MANO'
+  if AGENT == 'Allegro_right':
+    hand = 'Allegro'
+
   # Process waypoints, preserving rotation if present
   waypts = []
   for w in config['waypts']:
@@ -218,7 +225,7 @@ if __name__ == "__main__":
   object = trimesh.load(object_mesh_file, process=False)
 
   # Load contacts from .lcexp file
-  contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp')
+  contacts_lcexp = load_contacts_lcexp('startingTrajectories/' + AGENT + '/' + TASK + '/contacts.lcexp', hand)
   startIdx, endIdx = get_contact_frame_range(contacts_lcexp)
 
   frames = len(contacts_lcexp)
@@ -226,9 +233,34 @@ if __name__ == "__main__":
   d = mujoco.MjData(m)
   m.opt.timestep = 2*seconds/frames
 
+  # Look up body IDs by name since the kitchen model has many bodies before the hand.
+  if AGENT == 'Allegro_right':
+    hand_body_names = [
+        'allegro_palm',
+        'allegro_th_base', 'allegro_th_proximal', 'allegro_th_medial', 'allegro_th_distal', 'allegro_th_tip',
+        'allegro_ff_base', 'allegro_ff_proximal', 'allegro_ff_medial', 'allegro_ff_distal', 'allegro_ff_tip',
+        'allegro_mf_base', 'allegro_mf_proximal', 'allegro_mf_medial', 'allegro_mf_distal', 'allegro_mf_tip',
+        'allegro_rf_base', 'allegro_rf_proximal', 'allegro_rf_medial', 'allegro_rf_distal', 'allegro_rf_tip',
+    ]
+  else:
+    hand_body_names = [
+        'wrist',
+        'thumb1', 'thumb2', 'thumb3',
+        'ring1', 'ring2', 'ring3',
+        'pinky1', 'pinky2', 'pinky3',
+        'middle1', 'middle2', 'middle3',
+        'index1', 'index2', 'index3',
+    ]
+
+  hand_components_len = len(hand_body_names)
+  hand_component_body_ids = []
+  for name in hand_body_names:
+      body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, name)
+      if body_id == -1:
+          raise ValueError(f"Body '{name}' not found in model")
+      hand_component_body_ids.append(body_id)
+
   # load hand and object contacts from contacts_lcexp
-  hand_components_len = 16
-  hand_component_offset = 2  # starting index of body_id for hand components in mujoco model
   hand_contacts, object_contacts = process_contacts(contacts_lcexp, hand_components_len)
 
   # correct barrier axes (issue due to using repulsive curves previously)
@@ -262,13 +294,24 @@ if __name__ == "__main__":
     qpos_spline_data = rotate_keyframe_angles(qpos_spline_data, rotation)
     object_qpos_spline_data = rotate_keyframe_angles(object_qpos_spline_data, rotation)
 
+    object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
+
     if AGENT == 'MANO_right' or AGENT == 'trajectories':
       qpos = convert_to_quaternions_MANO(qpos_spline_data)
     if AGENT == 'Allegro_right':
       qpos = convert_to_quaternions_Allegro(qpos_spline_data)
-    qpos_copy = qpos.copy()
 
-    object_qpos = convert_to_quaternions_object(object_qpos_spline_data)  # with waypoint
+      hand_shift = np.zeros([qpos.shape[0], 1])
+      object_shift = np.zeros([object_qpos.shape[0], 1])
+      pos_shift = [2.2, -2.1, .08]
+      hand_shift[:3, 0] += pos_shift
+      object_shift[:3, 0] += pos_shift
+
+      qpos += hand_shift
+      object_qpos += object_shift
+
+
+    qpos_copy = qpos.copy()
   # object_qpos_copy = object_qpos.copy()
 
   # Start timing the retargeting process
@@ -402,7 +445,7 @@ if __name__ == "__main__":
   # compute hand component meshes
   hand_components = [None] * hand_components_len
   for j in range(hand_components_len):
-    hand_components[j] = get_mesh_for_body(m, j+hand_component_offset)
+    hand_components[j] = get_mesh_for_body(m, hand_component_body_ids[j])
 
   # contact_timewarp: (frames + extra_pt_count,)
   # [0, 1] -> [0, 1] where the indices are progressing linearly from 0 to 1, and each index contains an output in [0,1]
@@ -415,9 +458,9 @@ if __name__ == "__main__":
   # since we are marking all frames as contact, which actually only begin at start_frame_count
   print(f"Using device for optimization: {optimization_device}")
 
-  kinematic_tree = extract_kinematic_tree(m, hand_component_offset, hand_components_len)
+  kinematic_tree, root_body_id = extract_kinematic_tree(m, hand_component_body_ids)
   kinematic_tree_torch = precompute_kinematic_tree_tensors(
-    kinematic_tree, hand_component_offset, hand_components_len, optimization_device
+    kinematic_tree, hand_component_body_ids, optimization_device
   )
 
   for frame in range(contact_frame_count):
@@ -471,13 +514,14 @@ if __name__ == "__main__":
       initial_qpos,
       retargeted_spline_pos[start_frame_count+frame, :],
       m, d, hand_contacts, object_contacts,
-      hand_components, hand_component_offset, object, closet_original_frame,
+      hand_components, hand_component_body_ids, object, closet_original_frame,
       kinematic_tree, lr=learning_rate, n_iter=n_iter + (first_frame_iter-n_iter)*(frame==0), optimize_wrist=True,
       optimize_joints=True, agent_type=AGENT,
       print_logs=True, device=optimization_device,
       kinematic_tree_torch=kinematic_tree_torch,
       local_contacts_cache=local_contacts_cache,
-      loss_threshold=0.01
+      loss_threshold=loss_threshold,
+      root_body_id=root_body_id,
       # prev_qpos=prev_frame_qpos, temporal_weight=0.1,
       # barriers=barriers, barrier_weight=barrier_weight,
       # barrier_margin=barrier_margin, barrier_n=barrier_n
@@ -549,7 +593,7 @@ if __name__ == "__main__":
   from optimize_contacts import compute_contact_metrics
   contact_metrics = compute_contact_metrics(
     qpos, retargeted_spline_pos, m, d, hand_contacts, object_contacts,
-    hand_components, hand_component_offset, object, startIdx, endIdx
+    hand_components, hand_component_body_ids, object, startIdx, endIdx
   )
   print(f"  Contact frames: {startIdx} to {endIdx} ({endIdx - startIdx + 1} frames)")
   print(f"  Overall average distance: {np.mean(contact_metrics['average_distances']):.6f}")
@@ -557,7 +601,7 @@ if __name__ == "__main__":
 
   # Save final trajectories
   import os
-  trajectory_dir = "final_trajectories_0.01"
+  trajectory_dir = f"final_trajectories_{loss_threshold}"
   os.makedirs(trajectory_dir, exist_ok=True)
 
   # Extract trajectory name from config file
@@ -571,10 +615,22 @@ if __name__ == "__main__":
   np.save(object_traj_path, retargeted_spline_pos)
   np.save(metrics_path, contact_metrics, allow_pickle=True)
 
+  # Save timewarp data for visualization
+  timewarp_path = os.path.join(trajectory_dir, f"{config_name}_timewarp.npy")
+  timewarp_data = {
+      'contact_timewarp': contact_timewarp,
+      'start_frame_count': start_frame_count,
+      'contact_frame_count': contact_frame_count,
+      'end_frame_count': end_frame_count,
+      'pos_spline': pos_spline,
+  }
+  np.save(timewarp_path, timewarp_data, allow_pickle=True)
+
   print(f"\nTrajectories saved:")
   print(f"  Hand: {hand_traj_path}")
   print(f"  Object: {object_traj_path}")
   print(f"  Metrics: {metrics_path}")
+  print(f"  Timewarp: {timewarp_path}")
   print(f"\nRetargeting time: {retargeting_elapsed_time:.2f} seconds")
 
   # Save timing and hyperparameters to text file
@@ -598,6 +654,7 @@ if __name__ == "__main__":
     f.write(f"barrier_weight: {barrier_weight}\n")
     f.write(f"barrier_margin: {barrier_margin}\n")
     f.write(f"barrier_n: {barrier_n}\n")
+    f.write(f"loss_threshold: {loss_threshold}\n")
     f.write(f"extra_pt_count: {extra_pt_count}\n")
     f.write(f"optimization_device: {optimization_device}\n")
     f.write(f"frames: {frames}\n")
@@ -742,7 +799,7 @@ if __name__ == "__main__":
       for j in local_hand_contacts: # iterate over hand components
         for k in range(len(local_hand_contacts[j])):  # iterate over contacts in this component
           local_vertex = local_hand_contacts[j][k]
-          global_vertex = local_to_global(local_vertex, j+hand_component_offset, d)
+          global_vertex = local_to_global(local_vertex, hand_component_body_ids[j], d)
 
           mujoco.mjv_initGeom(
               viewer.user_scn.geoms[k + geometry_count],

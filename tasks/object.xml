@@ -1,6 +1,6 @@
 <mujoco>
     <asset>
-      <mesh name="object_mesh" file="apple.obj" scale="1 1 1"/>
+      <mesh name="object_mesh" file="box_upsampled.obj" scale="1 1 1"/>
     </asset>
 
     <worldbody>

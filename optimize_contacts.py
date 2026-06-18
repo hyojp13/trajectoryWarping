@@ -134,13 +134,14 @@ def compute_contact_loss_torch(global_hand_contacts_dict, global_object_contacts
 
 
 def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
-                  hand_components, hand_component_offset, object_mesh, frame_idx,
+                  hand_components, hand_component_body_ids, object_mesh, frame_idx,
                   kinematic_tree, lr=0.01, n_iter=100, optimize_wrist=True, optimize_joints=True,
                   agent_type='MANO_right', print_logs=False, device=None,
                   kinematic_tree_torch=None, local_contacts_cache=None,
                   barriers=None, barrier_weight=1.0, barrier_margin=0.01, barrier_n=2.0,
                   return_distances=False, loss_threshold=0.003,
-                  prev_qpos=None, temporal_weight=0.0):
+                  prev_qpos=None, temporal_weight=0.0,
+                  root_body_id=None):
     """
     Optimize hand qpos for a single frame to minimize contact correspondence error.
     Uses differentiable forward kinematics (PyTorch autograd) with GPU acceleration.
@@ -154,7 +155,7 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
         hand_contacts: dict of hand contacts per frame
         object_contacts: list of object contact vertex indices per frame
         hand_components: list of (faces, verts) tuples
-        hand_component_offset: starting body_id for hand components
+        hand_component_body_ids: list of body IDs for hand components
         object_mesh: trimesh object mesh
         frame_idx: frame index to optimize
         kinematic_tree: dict from extract_kinematic_tree
@@ -201,7 +202,8 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
         print(f"  Using device: {device}")
 
     hand_components_len = len(hand_components)
-    root_body_id = hand_component_offset  # Wrist is root
+    if root_body_id is None:
+        root_body_id = hand_component_body_ids[0]
 
     # Determine which parts of qpos to optimize
     if agent_type == 'MANO_right' or agent_type == 'trajectories':
@@ -254,7 +256,7 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
     # Pre-compute kinematic tree tensors if not provided
     if kinematic_tree_torch is None:
         kinematic_tree_torch = precompute_kinematic_tree_tensors(
-            kinematic_tree, hand_component_offset, hand_components_len, device
+            kinematic_tree, hand_component_body_ids, device
         )
 
     # Pre-compute local hand contacts if not provided
@@ -329,7 +331,7 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
         # Compute global hand contacts using differentiable FK with cached data
         global_hand_contacts_torch = compute_global_hand_contacts_torch(
             qpos_torch, kinematic_tree_torch, hand_contacts,
-            hand_components, hand_component_offset, hand_components_len,
+            hand_components, hand_component_body_ids,
             root_body_id, frame_idx, local_contacts_cache=local_contacts_cache
         )
 
@@ -350,7 +352,7 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
             # Compute hand component vertices for barrier checking
             hand_vertices = compute_hand_component_vertices_torch(
                 qpos_torch, kinematic_tree_torch, hand_components,
-                hand_component_offset, hand_components_len,
+                hand_component_body_ids,
                 root_body_id, device
             )
 
@@ -450,7 +452,7 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
         with torch.no_grad():
             global_hand_contacts_torch = compute_global_hand_contacts_torch(
                 qpos_torch, kinematic_tree_torch, hand_contacts,
-                hand_components, hand_component_offset, hand_components_len,
+                hand_components, hand_component_body_ids,
                 root_body_id, frame_idx, local_contacts_cache=local_contacts_cache
             )
             _, final_distances = compute_contact_loss_torch(
@@ -466,7 +468,7 @@ def optimize_frame(qpos_init, object_qpos, m, d, hand_contacts, object_contacts,
 
 
 def compute_contact_metrics(qpos, retargeted_spline_pos, m, d, hand_contacts, object_contacts,
-                            hand_components, hand_component_offset, object_mesh,
+                            hand_components, hand_component_body_ids, object_mesh,
                             start_idx, end_idx):
     """
     Compute contact distance metrics for all frames during contact after the full pipeline.
@@ -479,7 +481,7 @@ def compute_contact_metrics(qpos, retargeted_spline_pos, m, d, hand_contacts, ob
         hand_contacts: dict of hand contacts per frame
         object_contacts: list of object contact vertex indices per frame
         hand_components: list of (faces, verts) tuples
-        hand_component_offset: starting body_id for hand components
+        hand_component_body_ids: list of body IDs for hand components
         object_mesh: trimesh object mesh
         start_idx: first contact frame index
         end_idx: last contact frame index
@@ -539,7 +541,7 @@ def compute_contact_metrics(qpos, retargeted_spline_pos, m, d, hand_contacts, ob
                                           hand_components[hand_component_id][0],
                                           hand_components[hand_component_id][1])
                 # Convert to global position
-                global_hand_pos = local_to_global(local_pos, hand_component_id + hand_component_offset, d)
+                global_hand_pos = local_to_global(local_pos, hand_component_body_ids[hand_component_id], d)
 
                 # Get corresponding object contact position
                 obj_pos = global_object_contacts_np[object_contact_idx]

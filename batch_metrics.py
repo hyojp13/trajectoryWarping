@@ -224,7 +224,7 @@ def compute_initial_contact_metrics(traj_name, initial_traj_name, start_idx, end
         print(f"    Warning: Contacts file not found: {contacts_path}")
         return None
 
-    contacts_lcexp = load_contacts_lcexp(contacts_path)
+    contacts_lcexp = load_contacts_lcexp(contacts_path, "MANO")
 
     # Process contacts
     hand_components_len = 16
@@ -490,6 +490,9 @@ def collect_metrics(trajectory_names, data_dir='final_trajectories_0.01'):
                     contact_metrics = np.load(metrics_path, allow_pickle=True).item()
                     start_idx = contact_metrics['start_idx']
                     end_idx = contact_metrics['end_idx']
+                    num_contact_frames = end_idx - start_idx + 1
+                    results[traj_name]['num_contact_frames'] = num_contact_frames
+                    print(f"    Contact frames: {num_contact_frames} (indices {start_idx}-{end_idx})")
                 except Exception as e:
                     print(f"    Warning: Could not load contact metrics: {e}")
 
@@ -616,13 +619,13 @@ def collect_metrics(trajectory_names, data_dir='final_trajectories_0.01'):
 
 def print_summary(results):
     """Print a summary table of all results."""
-    print("\n" + "=" * 180)
+    print("\n" + "=" * 190)
     print("SUMMARY")
-    print("=" * 180)
+    print("=" * 190)
 
-    header = f"{'Trajectory':<30} | {'Init Dist (m/m/M)':<20} | {'Out Dist (m/m/M)':<20} | {'Init Cont (a/m/M)':<20} | {'Out Cont (a/m/M)':<20} | {'PLR Obj':<8} | {'PLR Hand':<8} | {'Timewarp':<8} | {'Time(s)':<8}"
+    header = f"{'Trajectory':<30} | {'Init Dist (m/m/M)':<20} | {'Out Dist (m/m/M)':<20} | {'Init Cont (a/m/M)':<20} | {'Out Cont (a/m/M)':<20} | {'#Cont':<6} | {'PLR Obj':<8} | {'PLR Hand':<8} | {'Timewarp':<8} | {'Time(s)':<8}"
     print(header)
-    print("-" * 180)
+    print("-" * 190)
 
     for traj_name, metrics in results.items():
         init = metrics.get('initial_distance', {})
@@ -633,6 +636,7 @@ def print_summary(results):
         plr_obj = metrics.get('path_length_ratio_obj')
         plr_hand = metrics.get('path_length_ratio_hand')
         tw_disc = metrics.get('timewarp_discrepancy')
+        num_cf = metrics.get('num_contact_frames')
 
         init_str = f"{init.get('mean', 0):.4f}/{init.get('min', 0):.4f}/{init.get('max', 0):.4f}" if init else "N/A"
         out_str = f"{out.get('mean', 0):.4f}/{out.get('min', 0):.4f}/{out.get('max', 0):.4f}" if out else "N/A"
@@ -642,10 +646,10 @@ def print_summary(results):
         plr_obj_str = f"{plr_obj:.4f}" if plr_obj is not None else "N/A"
         plr_hand_str = f"{plr_hand:.4f}" if plr_hand is not None else "N/A"
         tw_disc_str = f"{tw_disc:.6f}" if tw_disc is not None else "N/A"
+        num_cf_str = f"{num_cf}" if num_cf is not None else "N/A"
 
-        # Truncate trajectory name if too long
         display_name = traj_name if len(traj_name) <= 28 else traj_name[:25] + "..."
-        print(f"{display_name:<30} | {init_str:<20} | {out_str:<20} | {init_cont_str:<20} | {cont_str:<20} | {plr_obj_str:<8} | {plr_hand_str:<8} | {tw_disc_str:<8} | {time_str:<8}")
+        print(f"{display_name:<30} | {init_str:<20} | {out_str:<20} | {init_cont_str:<20} | {cont_str:<20} | {num_cf_str:<6} | {plr_obj_str:<8} | {plr_hand_str:<8} | {tw_disc_str:<8} | {time_str:<8}")
 
 
 def main():

@@ -1,6 +1,6 @@
 <mujoco model="base">
-  <!-- <compiler angle="radian" meshdir="meshes/"/> -->
-  <compiler angle="radian"/>
+  <compiler angle="radian" meshdir="meshes/"/>
+  <!-- <compiler angle="radian"/> -->
 
   <option impratio="20" density="1.2" viscosity="2e-05" cone="elliptic"/>
 
@@ -11,8 +11,11 @@
   </visual>
 
   <include file="tasks/object.xml" />
-	<include file="agents/Allegro_right/assets.xml" />
-	<include file="agents/Allegro_right/actuators.xml" />
+	<!-- <include file="agents/Allegro_right/assets.xml" /> -->
+	<!-- <include file="agents/Allegro_right/actuators.xml" /> -->
+
+	<include file="agents/MANO_right/assets.xml" />
+	<include file="agents/MANO_right/actuators.xml" />
 
   <asset>
     <texture type="skybox" builtin="flat" rgb1="1 1 1" rgb2="1 1 1" width="256" height="1536"/>
@@ -65,11 +68,11 @@
     <texture type="2d" name="paper_towel_left_group_image1" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/paper_towel_holders/holder_2/visuals/image1.png"/>
     <texture type="2d" name="knife_block_left_group_tex-model" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/knife_blocks/light_wood_3/visuals/material_0.png"/>
     <texture type="2d" name="knife_block_left_group_image0" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/knife_blocks/light_wood_3/visuals/image0.png"/>
-    <texture type="2d" name="plant_left_group_tex-model" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/material_0.png"/>
+    <!-- <texture type="2d" name="plant_left_group_tex-model" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/material_0.png"/>
     <texture type="2d" name="plant_left_group_image0" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/image0.png"/>
     <texture type="2d" name="plant_left_group_image1" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/image1.png"/>
     <texture type="2d" name="plant_left_group_image2" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/image2.png"/>
-    <texture type="2d" name="plant_left_group_image3" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/image3.png"/>
+    <texture type="2d" name="plant_left_group_image3" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/image3.png"/> -->
     <texture type="2d" name="stool_1_stool_group_tex-model" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/stools/stool_1_1/visuals/material_0.png"/>
     <texture type="2d" name="stool_1_stool_group_image0" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/stools/stool_1_1/visuals/image0.png"/>
     <texture type="2d" name="stool_2_stool_group_tex-model" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/stools/stool_1_1/visuals/material_0.png"/>
@@ -288,11 +291,11 @@
     <material name="paper_towel_left_group_paperboard" shininess="0" rgba="0.327778 0.266356 0.198069 1"/>
     <material name="knife_block_left_group_model" texture="knife_block_left_group_tex-model" reflectance="0.5"/>
     <material name="knife_block_left_group_Knife_rack" texture="knife_block_left_group_image0" shininess="0.25"/>
-    <material name="plant_left_group_model" texture="plant_left_group_tex-model" reflectance="0.5"/>
+    <!-- <material name="plant_left_group_model" texture="plant_left_group_tex-model" reflectance="0.5"/>
     <material name="plant_left_group_blinn1SG" texture="plant_left_group_image0" shininess="0.16"/>
     <material name="plant_left_group_blinn2SG" texture="plant_left_group_image1" shininess="0.16"/>
     <material name="plant_left_group_blinn3SG" texture="plant_left_group_image2" shininess="0.16"/>
-    <material name="plant_left_group_blinn4SG" texture="plant_left_group_image3" shininess="0"/>
+    <material name="plant_left_group_blinn4SG" texture="plant_left_group_image3" shininess="0"/> -->
     <material name="stool_1_stool_group_model" texture="stool_1_stool_group_tex-model" reflectance="0.5"/>
     <material name="stool_1_stool_group_Black_steel" shininess="0.25" rgba="0.044423 0.048567 0.051766 1"/>
     <material name="stool_1_stool_group_Plastic_black" shininess="0.0319209" rgba="0.013314 0.013121 0.013121 1"/>
@@ -419,10 +422,10 @@
     <mesh name="paper_towel_left_group_model_2_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/paper_towel_holders/holder_2/visuals/model_2.obj" scale="0.35 0.35 0.35"/>
     <mesh name="paper_towel_left_group_model_3_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/paper_towel_holders/holder_2/visuals/model_3.obj" scale="0.35 0.35 0.35"/>
     <mesh name="knife_block_left_group_model_0_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/knife_blocks/light_wood_3/visuals/model_0.obj" scale="0.381892 0.381892 0.381892"/>
-    <mesh name="plant_left_group_model_0_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/model_0.obj" scale="0.3 0.3 0.3"/>
+    <!-- <mesh name="plant_left_group_model_0_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/model_0.obj" scale="0.3 0.3 0.3"/>
     <mesh name="plant_left_group_model_1_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/model_1.obj" scale="0.3 0.3 0.3"/>
     <mesh name="plant_left_group_model_2_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/model_2.obj" scale="0.3 0.3 0.3"/>
-    <mesh name="plant_left_group_model_3_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/model_3.obj" scale="0.3 0.3 0.3"/>
+    <mesh name="plant_left_group_model_3_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/plants/aloe/visuals/model_3.obj" scale="0.3 0.3 0.3"/> -->
     <mesh name="stool_1_stool_group_model_0_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/stools/stool_1_1/visuals/model_0.obj"/>
     <mesh name="stool_1_stool_group_model_1_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/stools/stool_1_1/visuals/model_1.obj"/>
     <mesh name="stool_1_stool_group_model_2_vis" file="/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/accessories/stools/stool_1_1/visuals/model_2.obj"/>
@@ -535,7 +538,8 @@
   </asset>
 
   <worldbody>
-		<include file="agents/Allegro_right/body.xml" />
+		<!-- <include file="agents/Allegro_right/body.xml" /> -->
+		<include file="agents/MANO_right/body.xml" />
 
     <light pos="2 -2 2" dir="0.009999 0.009999 -0.9999" directional="true" castshadow="false" ambient="0.3 0.3 0.3" diffuse="0.3 0.3 0.3"/>
     <!-- <body name="left_eef_target" pos="0 0 -1" mocap="true">
@@ -2679,14 +2683,14 @@
       <geom name="knife_block_left_group_g1" size="0.06 0.0793856 0.190946" type="box" rgba="0.5 0 0 0.5"/>
       <site name="knife_block_left_group_default_site" pos="0 0 0" size="0.000763785" rgba="1 0 0 0"/>
     </body>
-    <body name="plant_left_group_main" pos="2.95449 -2.9154 1.07" quat="0.707106 0 0 0.707108">
+    <!-- <body name="plant_left_group_main" pos="2.95449 -2.9154 1.07" quat="0.707106 0 0 0.707108">
       <geom name="plant_left_group_g0" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="100" material="plant_left_group_blinn2SG" mesh="plant_left_group_model_0_vis"/>
       <geom name="plant_left_group_g1" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="100" material="plant_left_group_blinn1SG" mesh="plant_left_group_model_1_vis"/>
       <geom name="plant_left_group_g2" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="100" material="plant_left_group_blinn4SG" mesh="plant_left_group_model_2_vis"/>
       <geom name="plant_left_group_g3" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="100" material="plant_left_group_blinn3SG" mesh="plant_left_group_model_3_vis"/>
       <geom name="plant_left_group_g4" size="0.105 0.105 0.15" type="box" rgba="0.5 0 0 0.5"/>
       <site name="plant_left_group_default_site" pos="0 0 0" size="0.0006" rgba="1 0 0 0"/>
-    </body>
+    </body> -->
     <body name="stool_1_stool_group_main" pos="3.65 -2.6 0.5" quat="0.707105 0 0 -0.707108">
       <geom name="stool_1_stool_group_g0" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="100" material="stool_1_stool_group_Plastic_black" mesh="stool_1_stool_group_model_0_vis"/>
       <geom name="stool_1_stool_group_g1" type="mesh" contype="0" conaffinity="0" group="1" friction="0.95 0.3 0.1" solref="0.001" solimp="0.998 0.998" density="100" material="stool_1_stool_group_Black_steel" mesh="stool_1_stool_group_model_1_vis"/>

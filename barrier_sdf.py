@@ -153,7 +153,7 @@ def compute_barrier_distance(points, barrier, device='cpu'):
 
 
 def compute_hand_component_vertices_torch(qpos_torch, kinematic_tree, hand_components,
-                                         hand_component_offset, hand_components_len,
+                                         hand_component_body_ids,
                                          root_body_id, device):
     """
     Compute global positions of hand component vertices for barrier collision checking.
@@ -162,8 +162,7 @@ def compute_hand_component_vertices_torch(qpos_torch, kinematic_tree, hand_compo
         qpos_torch: (nq,) torch tensor with requires_grad=True
         kinematic_tree: dict from extract_kinematic_tree (with pre-converted torch tensors)
         hand_components: list of (faces, verts) tuples
-        hand_component_offset: starting body_id
-        hand_components_len: number of components
+        hand_component_body_ids: list of body IDs for hand components
         root_body_id: root body ID
         device: torch device
 
@@ -174,14 +173,13 @@ def compute_hand_component_vertices_torch(qpos_torch, kinematic_tree, hand_compo
 
     # Compute forward kinematics
     transforms = compute_forward_kinematics_torch(
-        qpos_torch, kinematic_tree, hand_component_offset,
-        hand_components_len, root_body_id
+        qpos_torch, kinematic_tree, hand_component_body_ids, root_body_id
     )
 
     global_vertices = {}
 
-    for hand_component_id in range(hand_components_len):
-        body_id = hand_component_id + hand_component_offset
+    for hand_component_id in range(len(hand_component_body_ids)):
+        body_id = hand_component_body_ids[hand_component_id]
 
         if body_id not in transforms:
             continue

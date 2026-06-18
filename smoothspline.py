@@ -362,6 +362,13 @@ def smooth_hand_trajectory(qpos, frames, AGENT, window_length=5, polyorder=3, vi
                     smoothed_joint[i] = np.mean(qpos[idx, start_idx:end_idx])
                 qpos[idx, :] = smoothed_joint
 
+    elif AGENT == 'Allegro_right':
+        # Allegro: qpos = [pos(3), quat(4), 16 finger hinge joints] = 23 DOFs
+        # Finger joints (7-22) are all revolute/hinge joints (regular angles)
+        if frames > window_length:
+            for i in range(7, 23):
+                qpos[i, :] = savgol_filter(qpos[i, :], window_length, polyorder)
+
     elif AGENT == 'MANO_right' or AGENT == 'trajectories':
         # MANO: qpos[7:] contains 16 finger joints as quaternions (60 values = 15 joints × 4)
         num_finger_joints = 15  # (51 - 3) / 3 = 16 euler joints -> 15 quaternion joints in qpos[7:67]

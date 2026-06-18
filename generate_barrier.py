@@ -46,6 +46,50 @@ def shift_obj(input_file, offset):
     mesh.apply_translation(new_offset)
     mesh.export(input_file)
 
+def soften_box(box_mesh, radius):
+    """
+    Take an extruded box mesh and round its edges/corners in-place.
+    Subdivides the mesh, then projects each vertex onto the rounded-box surface.
+
+    Args:
+        box_mesh: trimesh.Trimesh of a box (centered at origin)
+        radius:   rounding radius
+    
+    Returns:
+        trimesh.Trimesh with softened edges
+    """
+    r = float(radius)
+    if r < 1e-8:
+        return box_mesh
+
+    # Half-extents of the extruded box
+    H = np.array(box_mesh.extents) / 2.0
+    # Inner half-extents (the flat region before rounding starts)
+    h = H - r
+
+    # Subdivide so we have enough vertices at edges/corners
+    max_edge = r * 0.5
+    verts, faces = trimesh.remesh.subdivide_to_size(
+        box_mesh.vertices, box_mesh.faces, max_edge=max_edge
+    )
+
+    # For each vertex, project onto the rounded-box surface:
+    #   clamped = clamp(v, -h, h)   (nearest point on inner box)
+    #   delta   = v - clamped
+    #   if |delta| > 0: v_new = clamped + normalize(delta) * r
+    #   else:           v_new = v      (on a flat face, keep as-is)
+    clamped = np.clip(verts, -h, h)
+    delta = verts - clamped
+    dist = np.linalg.norm(delta, axis=1, keepdims=True)
+
+    # Mask for vertices near an edge or corner (not on a flat face)
+    mask = (dist > 1e-10).flatten()
+    verts[mask] = clamped[mask] + (delta[mask] / dist[mask]) * r
+
+    mesh = trimesh.Trimesh(vertices=verts, faces=faces)
+    mesh.fix_normals()
+    return mesh
+
 def add_mesh_barriers_to_xml(scene_file, barriers, visuals=None):
     """
     Add mesh barriers and visuals to MuJoCo XML string.
@@ -158,11 +202,10 @@ def generate_barrier(object_radius, shape, config={}, path=None):
         assert(len(config) == 2) # center + (l, w, h)
 
         dims = [dim + object_radius*2 for dim in config['dims']]  # (l, w, h)
-        # dims = config['dims']  # (l, w, h)
         c = config['pos']
 
-        translation = np.eye(4)
-        translation[:3, 3] = [-c[0], c[2], c[1]]
+        box = trimesh.creation.box(extents=[dims[0], dims[2], dims[1]])
+        box = soften_box(box, object_radius * 0.5)
 
-        box = trimesh.creation.box(extents=[dims[0], dims[2], dims[1]], transform=translation)
+        box.apply_translation([-c[0], c[2], c[1]])
         box.export(path)

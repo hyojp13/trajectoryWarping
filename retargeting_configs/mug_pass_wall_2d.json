@@ -1,0 +1,27 @@
+{
+  "agent": "trajectories",
+  "task": "mug_pass",
+  "scene_file": "kitchen2.xml",
+  "barriers": [
+    [
+      "rect",
+      {
+        "dims": [0.8, 0.12, 0.32],
+        "pos": [0.49, -1.58, 1.1]
+      }
+    ]
+  ],
+  "learning_rate": 0.01,
+  "n_iter": 1000,
+  "first_frame_iter": 1000,
+  "boundary_radius": 0.1,
+  "hand_boundary_radius": 0.1,
+  "new_start_pos_shift": [0, 0, 0],
+  "end_final_pos_shift": [0, -0.2, 0],
+  "end_obj_pos_shift": [0, 0, 0],
+  "waypts": [[[0, 1.3, 0.06], 0.48, 0.4], [[0, 1.3, 0.24], 0.5, 0.5, [180, 0, 0]], [[0, -0.17, 0.3], 0.66, 0.8]],
+  "extra_pt_count": 0,
+  "optimization_device": "cpu",
+  "object_mesh_file": "/Users/hjp/desktop/exports/s1/mug_pass_1_full_export_objectmesh.obj",
+  "rotation": [0, 0, -101.386]
+}
