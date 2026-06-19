@@ -102,8 +102,13 @@ pip install -r requirements.txt
 PyTorch 2.6.0, SciPy 1.15.1, Open3D 0.19.0, ...). For GPU IK, install a CUDA
 build of PyTorch and set `"optimization_device": "cuda"` in the config.
 
-> On macOS, launch viewer scripts with `mjpython` instead of `python` (a MuJoCo
-> requirement for interactive windows), e.g. `mjpython visualize_original.py ...`.
+> **macOS only:** any command that opens the interactive viewer must be run with
+> `mjpython` instead of `python` (a MuJoCo requirement for on-screen windows).
+> This applies to `visualize_original.py`, `visualize_retargeted.py`,
+> `playback_franka.py`, and `retarget*.py` / `optimize_franka.py` when *not* run
+> with `--no-view`. Headless commands (`--no-view`, `evaluate.py`,
+> `scripts/download_data.py`) use plain `python`. On Linux/Windows, use `python`
+> everywhere. The `python` examples below are annotated accordingly.
 
 ### 2. Data download
 
@@ -134,10 +139,10 @@ where `<agent>` is `trajectories`/`MANO_right` (human MANO hand) or
 
 ## Quick start
 
-Run a single warping trial and open the viewer:
+Run a single warping trial and open the viewer (macOS: `mjpython`):
 
 ```bash
-python retarget.py retargeting_configs/mug_pass_wall.json
+python retarget.py retargeting_configs/mug_pass_wall.json   # macOS: mjpython
 ```
 
 Run headless (no viewer), which is what the batch scripts use:
@@ -166,13 +171,15 @@ python retarget_naive_spline.py retargeting_configs/mug_pass_wall.json --no-view
 
 ## Visualizing
 
+These open an interactive window, so on macOS run them with `mjpython` (Linux/Windows: `python`).
+
 ```bash
 # The original demonstration (before warping), with contact points overlaid:
-python visualize_original.py retargeting_configs/mug_pass_wall.json
+mjpython visualize_original.py retargeting_configs/mug_pass_wall.json
 
 # A previously saved retargeted result:
-python visualize_retargeted.py retargeting_configs/mug_pass_wall.json
-python visualize_retargeted.py retargeting_configs/mug_pass_wall.json \
+mjpython visualize_retargeted.py retargeting_configs/mug_pass_wall.json
+mjpython visualize_retargeted.py retargeting_configs/mug_pass_wall.json \
     --trajectory-dir final_trajectories_0.0035
 ```
 
@@ -269,16 +276,16 @@ assembled with the correct hand model automatically (`trajwarp/pipeline.py`
 injects the agent's `assets/actuators/body` XML).
 
 ```bash
-# Allegro hand:
-python retarget.py retargeting_configs/apple_pass_allegro.json
+# Allegro hand (macOS: mjpython, since it opens the viewer):
+python retarget.py retargeting_configs/apple_pass_allegro.json   # macOS: mjpython
 ```
 
 A Franka parallel-jaw gripper variant (paper §IV-C) is provided as standalone
-scripts:
+scripts (both open a viewer; macOS: `mjpython`):
 
 ```bash
-python optimize_franka.py    # solve the Franka grasp/trajectory
-python playback_franka.py    # replay the saved Franka result
+python optimize_franka.py    # solve the Franka grasp/trajectory  (macOS: mjpython)
+python playback_franka.py    # replay the saved Franka result     (macOS: mjpython)
 ```
 
 ---
@@ -292,10 +299,10 @@ python playback_franka.py    # replay the saved Franka result
    scene fragment.
 3. Author `retargeting_configs/<your_task>.json` (start by copying an existing
    config; it is validated against the schema on load).
-4. Run it:
+4. Run it (macOS: `mjpython`, since this opens the viewer):
 
    ```bash
-   python retarget.py retargeting_configs/<your_task>.json
+   python retarget.py retargeting_configs/<your_task>.json   # macOS: mjpython
    ```
 
 ---
