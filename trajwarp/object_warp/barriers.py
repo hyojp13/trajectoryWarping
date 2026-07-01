@@ -42,6 +42,25 @@ def read_obj(file):
     
     return np.array(vertices, dtype=np.float32)
 
+
+def load_obj_vertices(file):
+    """Read raw ``v`` vertices from an OBJ, keeping the file's coordinate frame.
+
+    Trajectory OBJs written by ``save_obj`` contain only ``v`` lines (no faces),
+    and ``trimesh.load_mesh`` silently drops every vertex that no face references
+    -- so it returns an empty point set for these files. This parser keeps all
+    vertices. Unlike ``read_obj`` it does NOT remap axes, so the points stay in
+    the same frame as the barrier meshes (which trimesh loads verbatim).
+    """
+    vertices = []
+    with open(file, 'r') as f:
+        for line in f:
+            parts = line.strip().split()
+            if len(parts) >= 4 and parts[0] == 'v':
+                vertices.append([float(parts[1]), float(parts[2]), float(parts[3])])
+
+    return np.array(vertices, dtype=np.float64)
+
 def save_obj(trajectory, path):
     with open(path, 'w') as file:
         for vertex in trajectory:
@@ -82,8 +101,7 @@ def get_wayPointIdx(waypts, pos):
 def trajectoryBarrierIntersectionCount(trajectoryFile, barrierFile):
     surface_mesh = trimesh.load_mesh(barrierFile)
 
-    curve_mesh = trimesh.load_mesh(trajectoryFile)
-    curve_points = curve_mesh.vertices
+    curve_points = load_obj_vertices(trajectoryFile)
 
     return int(np.sum(surface_mesh.contains(curve_points)))
 
@@ -92,8 +110,7 @@ def trajectoryBarrierIntersectionCount(trajectoryFile, barrierFile):
 def trajectoryBarrierNearbyCount(trajectoryFile, barrierFile, radius):
     surface_mesh = trimesh.load_mesh(barrierFile)
 
-    curve_mesh = trimesh.load_mesh(trajectoryFile)
-    curve_points = curve_mesh.vertices
+    curve_points = load_obj_vertices(trajectoryFile)
 
     surface_tree = KDTree(surface_mesh.vertices)
     distances, _ = surface_tree.query(curve_points)
@@ -113,8 +130,7 @@ def correctTrajectory(trajectoryFile, barrierFile):
     surface = trimesh.load(barrierFile)
     surface = surface.convex_hull
     
-    traj_mesh = trimesh.load(trajectoryFile)
-    trajectory_points = traj_mesh.vertices
+    trajectory_points = load_obj_vertices(trajectoryFile)
 
     edges = np.array([[i, i+1] for i in range(len(trajectory_points)-1)])
     
