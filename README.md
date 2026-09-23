@@ -110,10 +110,10 @@ build of PyTorch and set `"optimization_device": "cuda"` in the config.
 > `scripts/download_data.py`) use plain `python`. On Linux/Windows, use `python`
 > everywhere. The `python` examples below are annotated accordingly.
 
-### 2. Data download
+### 2. Data
 
-The demonstration trajectories (~533 MB, derived from the GRAB dataset) and the
-vendored RoboCasa/RoboSuite kitchen assets (~146 MB) are hosted externally:
+**Kitchen assets.** The vendored RoboCasa/RoboSuite kitchen meshes and textures
+(~146 MB) are hosted externally:
 
 ```bash
 bash scripts/download_data.sh
@@ -121,8 +121,24 @@ bash scripts/download_data.sh
 python scripts/download_data.py
 ```
 
-This populates `startingTrajectories/` and `meshes/{robocasa,robosuite}/`. Set
-`STARTING_TRAJECTORIES_URL` / `KITCHEN_ASSETS_URL` to override the hosts.
+This populates `meshes/{robocasa,robosuite}/`. Set `KITCHEN_ASSETS_URL` to
+override the host.
+
+**Demonstrations, object meshes, and MANO hand meshes are not included.** They
+are derived from the [GRAB](https://grab.is.tue.mpg.de) dataset and the
+[MANO](https://mano.is.tue.mpg.de) hand model, whose licenses do not permit
+redistribution (see [Data licensing](#data-licensing)). To run the pipeline you
+need your own licensed copies:
+
+1. Register for and download GRAB and MANO from their websites.
+2. Convert the GRAB sequences you want into the demonstration format below,
+   placing the GRAB object meshes in `meshes/` (named as in
+   `retargeting_configs/*.json`) and the segmented MANO meshes in
+   `agents/MANO_right/geom_assets/`.
+
+If you already have a licensed copy of the preprocessed bundle, point the
+download script at it with
+`STARTING_TRAJECTORIES_URL=... bash scripts/download_data.sh`.
 
 Each demonstration lives at `startingTrajectories/<agent>/<task>/` and contains:
 
@@ -325,4 +341,17 @@ works as appropriate when using the data.
 
 ## License
 
-Released under the MIT License.
+The code in this repository is released under the MIT License (see
+[`LICENSE`](LICENSE)).
+
+### Data licensing
+
+The MIT License covers the code only. The demonstration trajectories, contact
+correspondences, and object meshes are derived from **GRAB** (Taheri et al.,
+ECCV 2020; objects from ContactDB, Brahmbhatt et al., CVPR 2019), and the human
+hand meshes from **MANO** (Romero et al., SIGGRAPH Asia 2017). Both are licensed
+by the Max Planck Institute for Intelligent Systems for non-commercial research
+only and may not be redistributed, so they are not included here. Obtain them
+from [grab.is.tue.mpg.de](https://grab.is.tue.mpg.de) and
+[mano.is.tue.mpg.de](https://mano.is.tue.mpg.de) under their respective
+licenses, and cite those works when using them.

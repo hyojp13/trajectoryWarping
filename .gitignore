@@ -19,3 +19,11 @@ startingTrajectories/
 env.xml
 MUJOCO_LOG.txt
 scene/
+
+# --- Licensed third-party data (GRAB / MANO): never commit, see README ---
+*_full_export_objectmesh.obj
+agents/MANO_right/geom_assets/
+tasks/geom_assets/
+meshes/apple.obj
+meshes/hammer.obj
+tasks/apple.obj

@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 """Cross-platform fallback for scripts/download_data.sh (no curl/wget needed).
 
-Downloads and extracts the externally hosted data bundle:
+Downloads and extracts the externally hosted data bundles:
 
-  * startingTrajectories.tar.gz -> ./startingTrajectories/   (~533 MB)
   * kitchen_assets.tar.gz       -> ./meshes/{robocasa,robosuite}/  (~146 MB)
+  * startingTrajectories.tar.gz -> ./startingTrajectories/
+    GRAB-derived and NOT publicly hosted (GRAB and MANO licenses forbid
+    redistribution); only fetched when STARTING_TRAJECTORIES_URL is set.
+    See "Data licensing" in the README.
 
-Both are gitignored. The defaults point at this repo's GitHub Releases; upload
-the bundles there (or set the STARTING_TRAJECTORIES_URL / KITCHEN_ASSETS_URL
-environment variables) once they are hosted.
+Both are gitignored. The kitchen-assets default points at this repo's GitHub
+Releases; set KITCHEN_ASSETS_URL to override.
 
 Usage:
     python scripts/download_data.py
@@ -25,9 +27,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RELEASE_BASE = os.environ.get(
     "RELEASE_BASE",
     "https://github.com/hyojp13/trajectoryRetargeting/releases/download/v1.0.0")
-STARTING_TRAJECTORIES_URL = os.environ.get(
-    "STARTING_TRAJECTORIES_URL",
-    f"{RELEASE_BASE}/startingTrajectories.tar.gz")
+STARTING_TRAJECTORIES_URL = os.environ.get("STARTING_TRAJECTORIES_URL", "")
 KITCHEN_ASSETS_URL = os.environ.get(
     "KITCHEN_ASSETS_URL",
     f"{RELEASE_BASE}/kitchen_assets.tar.gz")
@@ -62,15 +62,19 @@ def fetch_and_extract(url, dest_dir, marker):
 
 
 def main():
-    fetch_and_extract(
-        STARTING_TRAJECTORIES_URL,
-        REPO_ROOT,
-        os.path.join(REPO_ROOT, "startingTrajectories"))
+    if STARTING_TRAJECTORIES_URL:
+        fetch_and_extract(
+            STARTING_TRAJECTORIES_URL,
+            REPO_ROOT,
+            os.path.join(REPO_ROOT, "startingTrajectories"))
+    else:
+        print("STARTING_TRAJECTORIES_URL not set; skipping demonstration data "
+              "(see README, Data licensing).")
     fetch_and_extract(
         KITCHEN_ASSETS_URL,
         os.path.join(REPO_ROOT, "meshes"),
         os.path.join(REPO_ROOT, "meshes", "robocasa"))
-    print("Done. Data is in ./startingTrajectories/ and ./meshes/{robocasa,robosuite}/.")
+    print("Done.")
 
 
 if __name__ == "__main__":
