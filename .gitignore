@@ -27,3 +27,7 @@ tasks/geom_assets/
 meshes/apple.obj
 meshes/hammer.obj
 tasks/apple.obj
+
+# --- Pipeline outputs (derived from GRAB demonstrations): never commit ---
+final_trajectories*/
+initial_trajectories/

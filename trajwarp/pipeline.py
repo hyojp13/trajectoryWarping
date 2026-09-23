@@ -25,6 +25,7 @@ import mujoco
 from scipy.spatial.transform import Rotation as R
 
 from trajwarp.io.config import load_config
+from trajwarp.io.data_check import check_required_data
 from trajwarp.io.spline_io import parseSplines
 from trajwarp.io.contact_io import load_contacts_lcexp, get_contact_frame_range
 from trajwarp.io.scene_xml import write_object_xml, add_mesh_barriers_to_xml
@@ -143,6 +144,10 @@ def _inject_agent(xml_string, agent):
 
 def load_demonstration(config, initial=False):
     """Load splines, contacts, scene, and the MuJoCo model; return a WarpState."""
+    check_required_data(config)
+    # Scratch directory for intermediate OBJs (gitignored, may not exist yet).
+    os.makedirs('scene', exist_ok=True)
+
     agent = config.agent
     hand = get_hand_type(agent)
 

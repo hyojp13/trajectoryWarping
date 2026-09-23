@@ -1,25 +1,22 @@
 # trajwarp — Kinematic Non-Rigid Spatio-Temporal Trajectory Warping for Contact-Rich Dexterous Manipulation Demonstrations
 
-Reference implementation for the IROS 2026 submission *"Kinematic Non-Rigid
-Spatio-Temporal Trajectory Warping for Contact-Rich Dexterous Manipulation
-Demonstrations."*
+Code for the IROS 2026 paper *Kinematic Non-Rigid Spatio-Temporal Trajectory
+Warping for Contact-Rich Dexterous Manipulation Demonstrations*.
 
-`trajwarp` repurposes an existing contact-rich manipulation demonstration (hand
-+ object trajectories with per-frame hand-object contact distributions) into new
-variations that satisfy **spatial waypoints**, **environmental barriers**,
-**temporal shifts**, and **new start/end configurations** — while preserving the
-hand-object contact behavior of the original motion. It runs in minutes on a CPU
-and generalizes across manipulators (human MANO hand, Allegro hand, Franka
-gripper).
+Given one demonstration of a hand manipulating an object (hand and object
+trajectories plus per-frame hand-object contacts), trajwarp produces new
+versions of it that pass through spatial waypoints, avoid barriers in the
+scene, shift events in time, or start and end somewhere else. The hand keeps
+the same contacts with the object as in the original motion. A warp takes a few
+minutes on a CPU, and the same code works for the MANO hand, the Allegro hand,
+and a Franka gripper.
 
 ---
 
 ## Method overview
 
-The method (paper §III) is an **object-centric** pipeline: first warp the object
-trajectory to satisfy the inputs, then recover the hand trajectory from
-hand-object contact distributions. There are four stages, and the code mirrors
-them one-to-one:
+We warp the object trajectory first, then solve for the hand from the contacts.
+Each stage in Section III of the paper has its own module:
 
 | Paper stage | What it does | Module |
 | --- | --- | --- |
@@ -28,8 +25,7 @@ them one-to-one:
 | §III-C Temporal waypoint-constrained object warp | Chord-length B-spline retiming realizing the `t → t'` timewarp | [`trajwarp/object_warp/smoothing.py`](trajwarp/object_warp/smoothing.py) |
 | §III-D Hand warping | Per-timestep IK that reproduces the original contact correspondences and avoids barriers, then light smoothing | [`trajwarp/hand_warp/`](trajwarp/hand_warp/) |
 
-The top-level driver [`trajwarp/pipeline.py`](trajwarp/pipeline.py) strings these
-stages together:
+[`trajwarp/pipeline.py`](trajwarp/pipeline.py) runs the stages in order:
 
 ```python
 config = load_config(args.config)        # trajwarp.io.config
@@ -41,9 +37,10 @@ save_outputs(state, metrics)
 view_result(state)                        # trajwarp.viz.viewer
 ```
 
-The hand-warp stage is pluggable: the contact-based method (ours) and two naive
-SE(3) baselines all share the object warp and differ only in their
-[`trajwarp/hand_warp/strategies/`](trajwarp/hand_warp/strategies/).
+`warp_hand` comes from [`trajwarp/hand_warp/strategies/`](trajwarp/hand_warp/strategies/).
+Our contact-based method is `contact_based.py`. The baseline in
+`naive_spline.py` uses the same object warp and interpolates the hand between
+keyframes with a spline.
 
 ---
 
@@ -62,7 +59,7 @@ trajectoryWarping/
 │
 ├── trajwarp/                   # the library (mirrors paper §III)
 │   ├── pipeline.py             # stage orchestration + WarpState
-│   ├── io/                     # config, spline/contact parsing, MuJoCo XML
+│   ├── io/                     # config, spline/contact parsing, MuJoCo XML, data check
 │   ├── object_warp/            # spatial, barriers, smoothing/temporal
 │   ├── hand_warp/              # fk, optimizer, barrier SDF, contacts, strategies/
 │   ├── viz/                    # interactive viewer + metrics
@@ -71,15 +68,11 @@ trajectoryWarping/
 │
 ├── scenes/                     # MuJoCo scene XMLs (kitchen, franka_in_kitchen)
 ├── agents/                     # hand models (MANO_right, Allegro_right)
-├── tasks/                      # per-task scene fragments + object meshes
-├── meshes/                     # object meshes (+ vendored kitchen assets, downloaded)
+├── tasks/                      # per-task scene fragments
+├── meshes/                     # barrier meshes (+ object meshes and kitchen assets, not tracked)
 ├── retargeting_configs/        # one JSON per warping trial + schema.json
 └── scripts/                    # download_data.sh, reproduce_paper.sh
 ```
-
-Large data (`startingTrajectories/`, vendored kitchen assets under
-`meshes/robocasa` and `meshes/robosuite`, and `final_trajectories_*/` outputs)
-is **git-ignored** and fetched separately — see [Data download](#2-data-download).
 
 ---
 
@@ -87,7 +80,7 @@ is **git-ignored** and fetched separately — see [Data download](#2-data-downlo
 
 ### 1. Environment
 
-Requires Python 3.10 and a working OpenGL stack for the MuJoCo viewer.
+You need Python 3.10 and OpenGL for the MuJoCo viewer.
 
 ```bash
 git clone https://github.com/hyojp13/trajectoryWarping.git
@@ -98,22 +91,24 @@ conda activate trajwarp
 pip install -r requirements.txt
 ```
 
-`requirements.txt` pins the exact versions used for the paper (MuJoCo 3.2.7,
-PyTorch 2.6.0, SciPy 1.15.1, Open3D 0.19.0, ...). For GPU IK, install a CUDA
-build of PyTorch and set `"optimization_device": "cuda"` in the config.
+`requirements.txt` pins the versions we used for the paper (MuJoCo 3.2.7,
+PyTorch 2.6.0, SciPy 1.15.1, Open3D 0.19.0, and others). To run the IK on a GPU,
+install a CUDA build of PyTorch and set `"optimization_device": "cuda"` in the
+config.
 
-> **macOS only:** any command that opens the interactive viewer must be run with
-> `mjpython` instead of `python` (a MuJoCo requirement for on-screen windows).
-> This applies to `visualize_original.py`, `visualize_retargeted.py`,
-> `playback_franka.py`, and `retarget*.py` / `optimize_franka.py` when *not* run
-> with `--no-view`. Headless commands (`--no-view`, `evaluate.py`,
-> `scripts/download_data.py`) use plain `python`. On Linux/Windows, use `python`
-> everywhere. The `python` examples below are annotated accordingly.
+> **macOS only:** MuJoCo can only open a viewer window from `mjpython`, so use
+> `mjpython` in place of `python` for `visualize_original.py`,
+> `visualize_retargeted.py`, `playback_franka.py`, and for `retarget*.py` or
+> `optimize_franka.py` without `--no-view`. Everything else, and everything on
+> Linux or Windows, runs with plain `python`.
 
 ### 2. Data
 
-**Kitchen assets.** The vendored RoboCasa/RoboSuite kitchen meshes and textures
-(~146 MB) are hosted externally:
+This repository contains the code, the hand models, the configs, and the
+barrier meshes. You have to get the rest yourself.
+
+**Kitchen assets.** The RoboCasa/RoboSuite meshes and textures for the kitchen
+scene (~146 MB) are downloaded separately:
 
 ```bash
 bash scripts/download_data.sh
@@ -121,26 +116,24 @@ bash scripts/download_data.sh
 python scripts/download_data.py
 ```
 
-This populates `meshes/{robocasa,robosuite}/`. Set `KITCHEN_ASSETS_URL` to
-override the host.
+They go into `meshes/{robocasa,robosuite}/`. Set `KITCHEN_ASSETS_URL` to
+download from somewhere else.
 
-**Demonstrations, object meshes, and MANO hand meshes are not included.** They
-are derived from the [GRAB](https://grab.is.tue.mpg.de) dataset and the
-[MANO](https://mano.is.tue.mpg.de) hand model, whose licenses do not permit
-redistribution (see [Data licensing](#data-licensing)). To run the pipeline you
-need your own licensed copies:
+**Demonstrations, object meshes, and MANO hand meshes.** The demonstrations and
+object meshes come from the [GRAB](https://grab.is.tue.mpg.de) dataset, and the
+human hand meshes from [MANO](https://mano.is.tue.mpg.de). Neither license
+allows us to redistribute them (see [Data licensing](#data-licensing)), so you
+need to register for both and prepare the files yourself. `retarget.py`,
+`retarget_naive_spline.py`, and `visualize_original.py` check for these files
+on startup and print a list of anything missing.
 
-1. Register for and download GRAB and MANO from their websites.
-2. Convert the GRAB sequences you want into the demonstration format below,
-   placing the GRAB object meshes in `meshes/` (named as in
-   `retargeting_configs/*.json`) and the segmented MANO meshes in
-   `agents/MANO_right/geom_assets/`.
+| What | Where it goes | Source |
+| --- | --- | --- |
+| Demonstrations | `startingTrajectories/<agent>/<task>/{hand.smexp, object.smexp, contacts.lcexp}` | GRAB sequences, converted |
+| Object meshes | `meshes/<name>.obj` (the `object_mesh_file` in each config) | GRAB object meshes |
+| MANO hand meshes | `agents/MANO_right/geom_assets/right_<link>.obj` (16 files, listed below) | MANO right hand, split per link |
 
-If you already have a licensed copy of the preprocessed bundle, point the
-download script at it with
-`STARTING_TRAJECTORIES_URL=... bash scripts/download_data.sh`.
-
-Each demonstration lives at `startingTrajectories/<agent>/<task>/` and contains:
+Each demonstration directory contains:
 
 ```
 hand.smexp        # hand trajectory spline export
@@ -149,7 +142,43 @@ contacts.lcexp    # per-frame hand-object contact correspondences
 ```
 
 where `<agent>` is `trajectories`/`MANO_right` (human MANO hand) or
-`Allegro_right`.
+`Allegro_right`. The Allegro model and its meshes are included in the
+repository.
+
+The bundled configs use these demonstrations and object meshes:
+
+| Configs | `startingTrajectories/…` | Object mesh |
+| --- | --- | --- |
+| `fryingpan_*` | `trajectories/fryingpan_cook/` | `meshes/fryingpan_cook_2_full_export_objectmesh.obj` |
+| `mug_pass*` | `trajectories/mug_pass/` | `meshes/mug_pass_1_full_export_objectmesh.obj` |
+| `teapot_pour_*` | `trajectories/teapot_pour/` | `meshes/teapot_pour_1_full_export_objectmesh.obj` |
+| `waterbottle_shake*` | `trajectories/waterbottle_shake/` | `meshes/waterbottle_shake_1_full_export_objectmesh.obj` |
+| `cube_messy*` | `trajectories/cube/` | `meshes/cubemedium_inspect_1_full_export_objectmesh.obj` |
+| `apple_pass_allegro` | `Allegro_right/apple_pass/` | `meshes/apple.obj` |
+
+**MANO hand meshes.** The MuJoCo MANO hand (`agents/MANO_right/assets.xml`) and
+the contact loader (`trajwarp/io/contact_io.py`) expect one mesh per hand link:
+
+```
+agents/MANO_right/geom_assets/
+  right_wrist.obj
+  right_thumb1.obj   right_thumb2.obj   right_thumb3.obj
+  right_index1.obj   right_index2.obj   right_index3.obj
+  right_middle1.obj  right_middle2.obj  right_middle3.obj
+  right_ring1.obj    right_ring2.obj    right_ring3.obj
+  right_pinky1.obj   right_pinky2.obj   right_pinky3.obj
+```
+
+`contacts.lcexp` stores hand contacts as vertex indices into these meshes, so
+they have to be the same meshes the contacts were extracted on. A per-link
+split with a different vertex order will load without errors and give wrong
+contacts. The MANO release only includes the parametric model
+(`MANO_RIGHT.pkl`), so please get in touch with us if you want to reproduce
+our split.
+
+If you have access to a licensed copy of our preprocessed demonstrations,
+`STARTING_TRAJECTORIES_URL=<url> bash scripts/download_data.sh` downloads and
+unpacks it.
 
 ---
 
@@ -177,7 +206,8 @@ Outputs are written to `final_trajectories_<loss_threshold>/` as:
 <name>_data.txt       # timing + hyperparameters
 ```
 
-The baseline uses the same interface and writes a `_naive` suffix:
+The baseline takes the same arguments and adds a `_naive` suffix to its
+outputs:
 
 ```bash
 python retarget_naive_spline.py retargeting_configs/mug_pass_wall.json --no-view
@@ -199,17 +229,17 @@ mjpython visualize_retargeted.py retargeting_configs/mug_pass_wall.json \
     --trajectory-dir final_trajectories_0.0035
 ```
 
-The object path is colored along a green→red time gradient over the contact
-window; barriers are drawn as translucent gray primitives.
+The object path is drawn in a gradient from green to red over the contact
+window, and barriers appear as translucent gray boxes and spheres.
 
 ---
 
 ## Reproducing the paper tables
 
-`evaluate.py` reads the saved artifacts and reports, per trajectory: object-to-
-wrist distance, contact distance (avg/max), contact-window length, object/hand
-path-length ratios (vs. the initial demonstration), temporal-warp RMS
-discrepancy, and retargeting time.
+`evaluate.py` reads saved results and reports, for each trajectory, the
+object-to-wrist distance, average and maximum contact distance, contact window
+length, object and hand path length relative to the input, RMS temporal-warp
+error, and run time.
 
 ```bash
 # Evaluate specific results in a directory:
@@ -220,23 +250,24 @@ python evaluate.py --all --dir final_trajectories_0.0035 \
     --markdown results/table.md --csv results/table.csv
 ```
 
-To regenerate everything from scratch (sweeps loss thresholds, runs all configs,
-builds tables):
+`scripts/reproduce_paper.sh` runs every config at each loss threshold and
+builds the tables:
 
 ```bash
 bash scripts/reproduce_paper.sh
 # options:
 THRESHOLDS="0.0035 0.01" bash scripts/reproduce_paper.sh   # custom threshold sweep
-BASELINES=1 bash scripts/reproduce_paper.sh                # also run the naive baselines
+BASELINES=1 bash scripts/reproduce_paper.sh                # also run the naive baseline
 ```
 
 ---
 
 ## Configuration reference
 
-Each warping trial is a JSON file in `retargeting_configs/`, validated against
-[`retargeting_configs/schema.json`](retargeting_configs/schema.json) (parsed by
-[`trajwarp/io/config.py`](trajwarp/io/config.py)). Example:
+Each warping trial is a JSON file in `retargeting_configs/`.
+[`trajwarp/io/config.py`](trajwarp/io/config.py) checks it against
+[`retargeting_configs/schema.json`](retargeting_configs/schema.json) on load.
+Example:
 
 ```json
 {
@@ -278,26 +309,24 @@ Each warping trial is a JSON file in `retargeting_configs/`, validated against
 | `extra_pt_count` | extra interpolation points appended after the contact window |
 | `optimization_device` | torch device for the IK: `cpu`, `cuda`, or `mps` |
 
-A waypoint `w = (p, r, t, t')` corresponds directly to the paper's definition:
-`p` is the world-space position the object must pass through, `r` the rotation
-imposed over the preceding segment, `t` the time it occurs in the *input* and
-`t'` the time it is moved to in the *output*.
+A waypoint `w = (p, r, t, t')` matches the definition in the paper: the object
+passes through position `p` with rotation `r` applied over the segment before
+it, and the event at time `t` in the input happens at `t'` in the output.
 
 ---
 
 ## Generalization to other manipulators
 
-The same pipeline handles different hands by switching `agent`; the scene is
-assembled with the correct hand model automatically (`trajwarp/pipeline.py`
-injects the agent's `assets/actuators/body` XML).
+Set `agent` to switch hands. `trajwarp/pipeline.py` swaps the matching
+`assets`, `actuators`, and `body` XML into the scene.
 
 ```bash
 # Allegro hand (macOS: mjpython, since it opens the viewer):
 python retarget.py retargeting_configs/apple_pass_allegro.json   # macOS: mjpython
 ```
 
-A Franka parallel-jaw gripper variant (paper §IV-C) is provided as standalone
-scripts (both open a viewer; macOS: `mjpython`):
+The Franka gripper experiment (paper §IV-C) has its own scripts, both of which
+open a viewer (macOS: `mjpython`):
 
 ```bash
 python optimize_franka.py    # solve the Franka grasp/trajectory  (macOS: mjpython)
@@ -308,13 +337,12 @@ python playback_franka.py    # replay the saved Franka result     (macOS: mjpyth
 
 ## Adding a new demonstration
 
-1. Place the demonstration under
-   `startingTrajectories/<agent>/<your_task>/` with `hand.smexp`,
-   `object.smexp`, and `contacts.lcexp`.
-2. Add the object mesh to `meshes/` and (if needed) a `tasks/<your_task>.xml`
-   scene fragment.
-3. Author `retargeting_configs/<your_task>.json` (start by copying an existing
-   config; it is validated against the schema on load).
+1. Put `hand.smexp`, `object.smexp`, and `contacts.lcexp` in
+   `startingTrajectories/<agent>/<your_task>/`.
+2. Add the object mesh to `meshes/`, and a `tasks/<your_task>.xml` scene
+   fragment if the task needs one.
+3. Copy an existing config to `retargeting_configs/<your_task>.json` and edit
+   it. It is checked against the schema when it loads.
 4. Run it (macOS: `mjpython`, since this opens the viewer):
 
    ```bash
@@ -335,23 +363,21 @@ python playback_franka.py    # replay the saved Franka result     (macOS: mjpyth
 }
 ```
 
-Demonstrations are derived from the **GRAB** dataset; contact correspondences
-were extracted following the cited preprocessing pipeline. Please cite those
-works as appropriate when using the data.
+If you use the demonstration data, please also cite GRAB and the papers listed
+under [Data licensing](#data-licensing).
 
 ## License
 
-The code in this repository is released under the MIT License (see
-[`LICENSE`](LICENSE)).
+The code is released under the MIT License (see [`LICENSE`](LICENSE)).
 
 ### Data licensing
 
-The MIT License covers the code only. The demonstration trajectories, contact
+The MIT License does not cover the data. Our demonstrations, contact
 correspondences, and object meshes are derived from **GRAB** (Taheri et al.,
-ECCV 2020; objects from ContactDB, Brahmbhatt et al., CVPR 2019), and the human
-hand meshes from **MANO** (Romero et al., SIGGRAPH Asia 2017). Both are licensed
-by the Max Planck Institute for Intelligent Systems for non-commercial research
-only and may not be redistributed, so they are not included here. Obtain them
-from [grab.is.tue.mpg.de](https://grab.is.tue.mpg.de) and
-[mano.is.tue.mpg.de](https://mano.is.tue.mpg.de) under their respective
-licenses, and cite those works when using them.
+ECCV 2020), whose objects come from ContactDB (Brahmbhatt et al., CVPR 2019).
+The hand meshes are derived from **MANO** (Romero et al., SIGGRAPH Asia 2017).
+The Max Planck Institute for Intelligent Systems licenses GRAB and MANO for
+non-commercial research only and does not allow redistribution, which is why
+the files are not in this repository. You can request access at
+[grab.is.tue.mpg.de](https://grab.is.tue.mpg.de) and
+[mano.is.tue.mpg.de](https://mano.is.tue.mpg.de).

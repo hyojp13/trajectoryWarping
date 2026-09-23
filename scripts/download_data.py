@@ -4,13 +4,13 @@
 Downloads and extracts the externally hosted data bundles:
 
   * kitchen_assets.tar.gz       -> ./meshes/{robocasa,robosuite}/  (~146 MB)
-  * startingTrajectories.tar.gz -> ./startingTrajectories/
-    GRAB-derived and NOT publicly hosted (GRAB and MANO licenses forbid
-    redistribution); only fetched when STARTING_TRAJECTORIES_URL is set.
-    See "Data licensing" in the README.
+  * startingTrajectories.tar.gz -> ./startingTrajectories/  (only if
+    STARTING_TRAJECTORIES_URL is set)
 
-Both are gitignored. The kitchen-assets default points at this repo's GitHub
-Releases; set KITCHEN_ASSETS_URL to override.
+The demonstrations are not hosted publicly because the GRAB and MANO licenses
+don't allow it. If you have a licensed copy, point STARTING_TRAJECTORIES_URL at
+it. The kitchen assets come from this repo's GitHub release unless
+KITCHEN_ASSETS_URL is set.
 
 Usage:
     python scripts/download_data.py
@@ -23,7 +23,6 @@ import urllib.request
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Defaults assume the bundles are attached to a GitHub Release of this repo.
 RELEASE_BASE = os.environ.get(
     "RELEASE_BASE",
     "https://github.com/hyojp13/trajectoryWarping/releases/download/v1.0.0")
@@ -68,8 +67,8 @@ def main():
             REPO_ROOT,
             os.path.join(REPO_ROOT, "startingTrajectories"))
     else:
-        print("STARTING_TRAJECTORIES_URL not set; skipping demonstration data "
-              "(see README, Data licensing).")
+        print("STARTING_TRAJECTORIES_URL is not set, skipping demonstrations "
+              "(see the Data section of the README).")
     fetch_and_extract(
         KITCHEN_ASSETS_URL,
         os.path.join(REPO_ROOT, "meshes"),

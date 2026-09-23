@@ -1,4 +1,5 @@
 import copy
+import os
 
 import numpy as np
 import trimesh
@@ -62,6 +63,7 @@ def load_obj_vertices(file):
     return np.array(vertices, dtype=np.float64)
 
 def save_obj(trajectory, path):
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
     with open(path, 'w') as file:
         for vertex in trajectory:
             x, y, z = vertex
