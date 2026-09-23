@@ -1,20 +1,21 @@
 <mujoco model="table_arena">
+  <compiler angle="radian" meshdir="meshes/" texturedir="meshes/"/>
   <include file="tasks/flashlight_on.xml" />
 	<include file="agents/MANO_right/assets.xml" />
 	<include file="agents/MANO_right/actuators.xml" />
 
   <asset>
     <texture builtin="gradient" height="256" rgb1=".9 .9 1." rgb2=".2 .3 .4" type="skybox" width="256" />
-    <texture file="/Users/hjp/Desktop/robosuite/robosuite/models/assets/arenas/../textures/light-gray-floor-tile.png" type="2d" name="texplane" />
+    <texture file="robosuite/models/assets/textures/light-gray-floor-tile.png" type="2d" name="texplane" />
     <material name="floorplane" reflectance="0.01" shininess="0.0" specular="0.0" texrepeat="2 2" texture="texplane" texuniform="true" />
     
-    <texture file="/Users/hjp/Desktop/robosuite/robosuite/models/assets/arenas/../textures/ceramic.png" type="cube" name="tex-ceramic" />
+    <texture file="robosuite/models/assets/textures/ceramic.png" type="cube" name="tex-ceramic" />
     <material name="table_ceramic" reflectance="0.0" shininess="0.0" specular="0.2" texrepeat="1 1" texture="tex-ceramic" />
     
-    <texture file="/Users/hjp/Desktop/robosuite/robosuite/models/assets/arenas/../textures/steel-brushed.png" type="cube" name="tex-steel-brushed" />
+    <texture file="robosuite/models/assets/textures/steel-brushed.png" type="cube" name="tex-steel-brushed" />
     <material name="table_legs_metal" reflectance="0.8" shininess="0.8" texrepeat="1 1" texture="tex-steel-brushed" />
     
-    <texture file="/Users/hjp/Desktop/robosuite/robosuite/models/assets/arenas/../textures/light-gray-plaster.png" type="2d" name="tex-light-gray-plaster" />
+    <texture file="robosuite/models/assets/textures/light-gray-plaster.png" type="2d" name="tex-light-gray-plaster" />
     <material name="walls_mat" reflectance="0.0" shininess="0.1" specular="0.1" texrepeat="3 3" texture="tex-light-gray-plaster" texuniform="true" />
     
     <texture name="textable" builtin="flat" height="512" width="512" rgb1="0.5 0.5 0.5" rgb2="0.5 0.5 0.5" />

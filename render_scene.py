@@ -185,7 +185,7 @@ def main():
     trajectory_name = os.path.splitext(os.path.basename(args.config))[0]
 
     # Add ventilator/hood as a mesh barrier
-    hood_mesh = "/Users/hjp/Desktop/robocasa/robocasa/models/assets/fixtures/hoods/pack_2/visuals/model_0.obj"
+    hood_mesh = "meshes/robocasa/models/assets/fixtures/hoods/pack_2/visuals/model_0.obj"
     hood_barrier = (hood_mesh, {'scale': [1.15613, 1.06643, 1.15613], 'pos': [2.2, -0.3, 2.24807]})
 
     # Add top shelf as a rect barrier (shelf_1 at [3.2, -0.2, 1.85], size [0.5, 0.2, 0.015])
