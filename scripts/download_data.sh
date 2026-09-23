@@ -24,7 +24,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # Defaults assume the bundles are attached to a GitHub Release of this repo.
-RELEASE_BASE="${RELEASE_BASE:-https://github.com/hyojp13/trajectoryRetargeting/releases/download/v1.0.0}"
+RELEASE_BASE="${RELEASE_BASE:-https://github.com/hyojp13/trajectoryWarping/releases/download/v1.0.0}"
 STARTING_TRAJECTORIES_URL="${STARTING_TRAJECTORIES_URL:-}"
 KITCHEN_ASSETS_URL="${KITCHEN_ASSETS_URL:-${RELEASE_BASE}/kitchen_assets.tar.gz}"
 

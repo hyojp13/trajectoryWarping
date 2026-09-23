@@ -26,7 +26,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Defaults assume the bundles are attached to a GitHub Release of this repo.
 RELEASE_BASE = os.environ.get(
     "RELEASE_BASE",
-    "https://github.com/hyojp13/trajectoryRetargeting/releases/download/v1.0.0")
+    "https://github.com/hyojp13/trajectoryWarping/releases/download/v1.0.0")
 STARTING_TRAJECTORIES_URL = os.environ.get("STARTING_TRAJECTORIES_URL", "")
 KITCHEN_ASSETS_URL = os.environ.get(
     "KITCHEN_ASSETS_URL",

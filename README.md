@@ -50,7 +50,7 @@ SE(3) baselines all share the object warp and differ only in their
 ## Repository structure
 
 ```
-trajectoryRetargeting/
+trajectoryWarping/
 ├── retarget.py                 # our method (contact-based hand warp)
 ├── retarget_naive_spline.py    # baseline: keyframe + spline hand interpolation
 ├── visualize_original.py       # view the source demonstration
@@ -90,8 +90,8 @@ is **git-ignored** and fetched separately — see [Data download](#2-data-downlo
 Requires Python 3.10 and a working OpenGL stack for the MuJoCo viewer.
 
 ```bash
-git clone https://github.com/hyojp13/trajectoryRetargeting.git
-cd trajectoryRetargeting
+git clone https://github.com/hyojp13/trajectoryWarping.git
+cd trajectoryWarping
 
 conda create -n trajwarp python=3.10 -y
 conda activate trajwarp

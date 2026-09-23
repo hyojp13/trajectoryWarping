@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/hyojp13/trajectoryRetargeting/main/retargeting_configs/schema.json",
+  "$id": "https://raw.githubusercontent.com/hyojp13/trajectoryWarping/main/retargeting_configs/schema.json",
   "title": "trajwarp retargeting configuration",
   "description": "One warping trial: the demonstration/scene to start from, the spatio-temporal waypoints and barriers that reshape it, and the optimizer settings used to recover the hand. Mirrors trajwarp.io.config.RetargetConfig.",
   "type": "object",

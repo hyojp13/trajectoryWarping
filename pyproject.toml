@@ -30,7 +30,7 @@ dependencies = [
 viz = ["opencv-python", "matplotlib"]
 
 [project.urls]
-Repository = "https://github.com/hyojp13/trajectoryRetargeting"
+Repository = "https://github.com/hyojp13/trajectoryWarping"
 
 # The repo is run as scripts from its root; only the library package (and its
 # subpackages) is installed.
